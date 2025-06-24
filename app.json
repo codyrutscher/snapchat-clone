@@ -1,42 +1,44 @@
 {
-  "expo": {
-    "name": "snapchat-clone",
-    "slug": "snapchat-clone",
-    "version": "1.0.0",
-    "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "snapchatclone",
-    "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "ios": {
-      "supportsTablet": true
-    },
-    "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+    "expo": {
+      "name": "FlashChat",
+      "slug": "flashchat",
+      "owner": "codyrutscher",
+      "version": "1.0.0",
+      "orientation": "portrait",
+      "icon": "./assets/icon.png",
+      "userInterfaceStyle": "light",
+      "splash": {
+        "backgroundColor": "#6B5CFF"
       },
-      "edgeToEdgeEnabled": true
-    },
-    "web": {
-      "bundler": "metro",
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
-    },
-    "plugins": [
-      "expo-router",
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+      "assetBundlePatterns": [
+        "**/*"
+      ],
+      "ios": {
+        "supportsTablet": true,
+        "bundleIdentifier": "com.yourcompany.flashchat",
+        "infoPlist": {
+          "NSCameraUsageDescription": "This app uses the camera to take snaps.",
+          "NSPhotoLibraryUsageDescription": "This app needs access to photo library to save snaps.",
+          "NSLocationWhenInUseUsageDescription": "This app uses your location to show you on the Snap Map to your friends."
         }
-      ]
-    ],
-    "experiments": {
-      "typedRoutes": true
+      },
+      "android": {
+        "adaptiveIcon": {
+          "foregroundImage": "./assets/icon.png",
+          "backgroundColor": "#6B5CFF"
+        },
+        "package": "com.yourcompany.flashchat",
+        "permissions": ["CAMERA", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "WRITE_EXTERNAL_STORAGE"]
+      },
+      "web": {
+        "favicon": "./assets/icon.png",
+        "name": "FlashChat",
+        "shortName": "FlashChat",
+        "description": "A Snapchat-like messaging app",
+        "backgroundColor": "#6B5CFF",
+        "themeColor": "#6B5CFF",
+        "display": "standalone",
+        "orientation": "portrait"
+      }
     }
   }
-}

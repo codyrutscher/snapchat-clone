@@ -6,6 +6,7 @@ import { addDoc, collection, doc, getDoc } from 'firebase/firestore';
 import React, { useEffect, useRef, useState } from 'react';
 import { Video } from 'expo-av';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import { useFocusEffect } from '@react-navigation/native';
 import {
     ActivityIndicator,
     Alert,
@@ -22,8 +23,17 @@ import {
 } from 'react-native';
 import { Colors } from '../constants/Colors';
 import { auth, db, storage } from '../firebase';
+import { CaptionSuggestions } from '../components/AIAssistant';
+import OpenAIService from '../services/OpenAIService';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+
+// Platform-specific delays
+const CAMERA_INIT_DELAY = Platform.select({
+  ios: 300,
+  android: 500,
+  web: 1000,
+});
 
 // Simple borders
 const BORDERS = [
@@ -43,13 +53,15 @@ const BACKGROUNDS = [
   { id: 'blue', name: 'Blue', color: '#4ECDC4' },
 ];
 
-export default function CameraScreen() {
+export default function CameraScreen({ navigation }) {
   // Use the camera permissions hook
   const [permission, requestPermission] = useCameraPermissions();
   
   // Camera states
   const [cameraType, setCameraType] = useState('back');
   const [cameraReady, setCameraReady] = useState(false);
+  const [cameraInitializing, setCameraInitializing] = useState(true);
+  const [cameraError, setCameraError] = useState(false);
   
   // Media states
   const [capturedMedia, setCapturedMedia] = useState(null);
@@ -67,9 +79,41 @@ export default function CameraScreen() {
   const [sendAsStory, setSendAsStory] = useState(false);
   const [uploading, setUploading] = useState(false);
   
+  // Caption states
+  const [snapText, setSnapText] = useState('');
+  const [showAICaptions, setShowAICaptions] = useState(false);
+  
   const cameraRef = useRef(null);
 
   useEffect(() => {
+    let isMounted = true;
+    
+    const setupCamera = async () => {
+      try {
+        if (!permission) {
+          console.log('Waiting for permissions...');
+          return;
+        }
+        
+        if (!permission.granted) {
+          console.log('Requesting camera permission...');
+          const result = await requestPermission();
+          if (!result.granted && isMounted) {
+            Alert.alert('Permission Required', 'Camera permission is required to use this feature.');
+            navigation.goBack();
+          }
+        }
+      } catch (error) {
+        console.error('Camera setup error:', error);
+        if (isMounted) {
+          Alert.alert('Camera Error', 'Failed to initialize camera. Please try again.');
+          navigation.goBack();
+        }
+      }
+    };
+    
+    setupCamera();
+    
     // Load friends
     loadFriends();
     
@@ -77,7 +121,39 @@ export default function CameraScreen() {
     if (Platform.OS !== 'web') {
       MediaLibrary.requestPermissionsAsync();
     }
-  }, []);
+    
+    return () => {
+      isMounted = false;
+      setCameraReady(false);
+    };
+  }, [permission, navigation]);
+
+  // Handle navigation focus
+  useFocusEffect(
+    React.useCallback(() => {
+      let isActive = true;
+      
+      const initializeCamera = async () => {
+        if (isActive && !capturedMedia) {
+          setCameraReady(false);
+          setCameraInitializing(true);
+          setCameraError(false);
+          // Reset camera state
+          await new Promise(resolve => setTimeout(resolve, CAMERA_INIT_DELAY));
+          if (isActive) {
+            setCameraInitializing(false);
+          }
+        }
+      };
+      
+      initializeCamera();
+      
+      return () => {
+        isActive = false;
+        setCameraReady(false);
+      };
+    }, [capturedMedia])
+  );
 
   const loadFriends = async () => {
     if (!auth.currentUser) return;
@@ -108,19 +184,25 @@ export default function CameraScreen() {
   };
 
   const takePicture = async () => {
-    if (cameraRef.current && cameraReady) {
-      try {
-        const photo = await cameraRef.current.takePictureAsync({
-          quality: 0.7,
-          base64: false,
-        });
-        setCapturedMedia(photo.uri);
-        setMediaType('photo');
-        setShowEditOptions(true);
-      } catch (error) {
-        console.error('Error taking picture:', error);
-        Alert.alert('Error', 'Failed to take picture');
-      }
+    if (!cameraRef.current || !cameraReady) {
+      console.log('Camera not ready yet');
+      return;
+    }
+    
+    try {
+      // Add a small delay to ensure camera is fully ready
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 0.7,
+        base64: false,
+      });
+      setCapturedMedia(photo.uri);
+      setMediaType('photo');
+      setShowEditOptions(true);
+    } catch (error) {
+      console.error('Error taking picture:', error);
+      Alert.alert('Error', 'Failed to take picture');
     }
   };
 
@@ -139,22 +221,22 @@ export default function CameraScreen() {
     }
   };
 
- const pickVideo = async () => {
-  const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-    allowsEditing: true,
-    aspect: [9, 16],
-    quality: 0.5, // Reduced quality for smaller file size
-    videoExportPreset: ImagePicker.VideoExportPreset.MediumQuality, // Compress video
-    videoMaxDuration: 30, // 30 seconds max
-  });
+  const pickVideo = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+      allowsEditing: true,
+      aspect: [9, 16],
+      quality: 0.5, // Reduced quality for smaller file size
+      videoExportPreset: ImagePicker.VideoExportPreset.MediumQuality, // Compress video
+      videoMaxDuration: 30, // 30 seconds max
+    });
 
-  if (!result.canceled) {
-    setCapturedMedia(result.assets[0].uri);
-    setMediaType('video');
-    setShowEditOptions(true);
-  }
-};
+    if (!result.canceled) {
+      setCapturedMedia(result.assets[0].uri);
+      setMediaType('video');
+      setShowEditOptions(true);
+    }
+  };
 
   const flipCamera = () => {
     setCameraType(current => (current === 'back' ? 'front' : 'back'));
@@ -169,98 +251,112 @@ export default function CameraScreen() {
     setSelectedBackground('none');
     setSelectedFriends([]);
     setSendAsStory(false);
+    setSnapText('');
+    setShowAICaptions(false);
+    setCameraError(false);
+    setCameraInitializing(false);
+  };
+
+  const retryCamera = () => {
+    setCameraError(false);
+    setCameraInitializing(true);
+    setCameraReady(false);
+    // Force re-render of camera
+    setCameraType(current => current === 'back' ? 'front' : 'back');
+    setTimeout(() => setCameraType('back'), 100);
   };
 
   const saveSnap = async () => {
-  if (!capturedMedia || !auth.currentUser) return;
-  
-  if (!sendAsStory && selectedFriends.length === 0) {
-    Alert.alert('Error', 'Please select at least one friend or send as story');
-    return;
-  }
-
-  setUploading(true);
-  
-  try {
-    let mediaUri = capturedMedia;
+    if (!capturedMedia || !auth.currentUser) return;
     
-    // Compress video if it's a video
-    if (mediaType === 'video') {
-      try {
-        // For videos, we'll use ImageManipulator to create a thumbnail
-        // and store video URL directly (Firebase will handle streaming)
-        console.log('Processing video for upload...');
-      } catch (error) {
-        console.log('Video processing error:', error);
-      }
-    }
-    
-    // Upload media to Firebase Storage
-    const response = await fetch(mediaUri);
-    const blob = await response.blob();
-    
-    // Check file size
-    const sizeInMB = blob.size / (1024 * 1024);
-    console.log(`File size: ${sizeInMB.toFixed(2)} MB`);
-    
-    if (sizeInMB > 100) { // 100MB limit for Firebase
-      Alert.alert('Error', 'File is too large. For videos, please select a shorter clip.');
-      setUploading(false);
+    if (!sendAsStory && selectedFriends.length === 0) {
+      Alert.alert('Error', 'Please select at least one friend or send as story');
       return;
     }
+
+    setUploading(true);
     
-    const filename = `snaps/${auth.currentUser.uid}/${Date.now()}.${mediaType === 'video' ? 'mp4' : 'jpg'}`;
-    const storageRef = ref(storage, filename);
-    
-    await uploadBytes(storageRef, blob);
-    const downloadURL = await getDownloadURL(storageRef);
+    try {
+      let mediaUri = capturedMedia;
+      
+      // Compress video if it's a video
+      if (mediaType === 'video') {
+        try {
+          // For videos, we'll use ImageManipulator to create a thumbnail
+          // and store video URL directly (Firebase will handle streaming)
+          console.log('Processing video for upload...');
+        } catch (error) {
+          console.log('Video processing error:', error);
+        }
+      }
+      
+      // Upload media to Firebase Storage
+      const response = await fetch(mediaUri);
+      const blob = await response.blob();
+      
+      // Check file size
+      const sizeInMB = blob.size / (1024 * 1024);
+      console.log(`File size: ${sizeInMB.toFixed(2)} MB`);
+      
+      if (sizeInMB > 100) { // 100MB limit for Firebase
+        Alert.alert('Error', 'File is too large. For videos, please select a shorter clip.');
+        setUploading(false);
+        return;
+      }
+      
+      const filename = `snaps/${auth.currentUser.uid}/${Date.now()}.${mediaType === 'video' ? 'mp4' : 'jpg'}`;
+      const storageRef = ref(storage, filename);
+      
+      await uploadBytes(storageRef, blob);
+      const downloadURL = await getDownloadURL(storageRef);
 
-    const snapMetadata = {
-      border: selectedBorder,
-      background: selectedBackground,
-      mediaType: mediaType
-    };
-
-    const promises = [];
-
-    if (sendAsStory) {
-      const storyData = {
-        userId: auth.currentUser.uid,
-        username: auth.currentUser.displayName || 'Anonymous',
-        imageUrl: downloadURL,
-        timestamp: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-        type: 'story',
-        metadata: snapMetadata
+      const snapMetadata = {
+        border: selectedBorder,
+        background: selectedBackground,
+        mediaType: mediaType,
+        text: snapText
       };
-      promises.push(addDoc(collection(db, 'snaps'), storyData));
+
+      const promises = [];
+
+      if (sendAsStory) {
+        const storyData = {
+          userId: auth.currentUser.uid,
+          username: auth.currentUser.displayName || 'Anonymous',
+          imageUrl: downloadURL,
+          timestamp: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          type: 'story',
+          metadata: snapMetadata
+        };
+        promises.push(addDoc(collection(db, 'snaps'), storyData));
+      }
+
+      selectedFriends.forEach(friendId => {
+        const snapData = {
+          userId: auth.currentUser.uid,
+          username: auth.currentUser.displayName || 'Anonymous',
+          recipientId: friendId,
+          imageUrl: downloadURL,
+          timestamp: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          type: 'direct',
+          viewed: false,
+          metadata: snapMetadata
+        };
+        promises.push(addDoc(collection(db, 'snaps'), snapData));
+      });
+
+      await Promise.all(promises);
+      Alert.alert('Success', 'Snap sent!');
+      resetCamera();
+    } catch (error) {
+      console.error('Upload error:', error);
+      Alert.alert('Error', 'Failed to send snap: ' + error.message);
+    } finally {
+      setUploading(false);
     }
-
-    selectedFriends.forEach(friendId => {
-      const snapData = {
-        userId: auth.currentUser.uid,
-        username: auth.currentUser.displayName || 'Anonymous',
-        recipientId: friendId,
-        imageUrl: downloadURL,
-        timestamp: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-        type: 'direct',
-        viewed: false,
-        metadata: snapMetadata
-      };
-      promises.push(addDoc(collection(db, 'snaps'), snapData));
-    });
-
-    await Promise.all(promises);
-    Alert.alert('Success', 'Snap sent!');
-    resetCamera();
-  } catch (error) {
-    console.error('Upload error:', error);
-    Alert.alert('Error', 'Failed to send snap: ' + error.message);
-  } finally {
-    setUploading(false);
-  }
-};
+  };
 
   const toggleFriendSelection = (friendId) => {
     setSelectedFriends(prev => {
@@ -310,18 +406,18 @@ export default function CameraScreen() {
         <View style={[styles.previewContainer, getBackgroundStyle()]}>
           <View style={[styles.mediaWrapper, getBorderStyle()]}>
             {mediaType === 'video' ? (
-  <Video
-    source={{ uri: capturedMedia }}
-    style={styles.previewImage}
-    shouldPlay
-    isLooping
-    resizeMode="contain"
-    isMuted={false}
-    volume={0.5}
-  />
-) : (
-  <Image source={{ uri: capturedMedia }} style={styles.previewImage} />
-)}
+              <Video
+                source={{ uri: capturedMedia }}
+                style={styles.previewImage}
+                shouldPlay
+                isLooping
+                resizeMode="contain"
+                isMuted={false}
+                volume={0.5}
+              />
+            ) : (
+              <Image source={{ uri: capturedMedia }} style={styles.previewImage} />
+            )}
           </View>
         </View>
 
@@ -412,6 +508,24 @@ export default function CameraScreen() {
             {sendAsStory && <Ionicons name="checkmark" size={24} color={Colors.primary} />}
           </TouchableOpacity>
 
+          {/* Add AI Caption Suggestions */}
+          <CaptionSuggestions
+            imageContext={{
+              filter: selectedBorder,
+              background: selectedBackground,
+              border: selectedBorder,
+              time: new Date().getHours(),
+              mood: 'casual',
+              mediaType: mediaType,
+              recipientName: friends.find(f => selectedFriends.includes(f.id))?.displayName || null
+            }}
+            onSelect={(caption) => {
+              setSnapText(caption);
+              setShowAICaptions(false);
+              OpenAIService.updateContentFeedback('caption', { used: true, caption });
+            }}
+          />
+
           <Text style={styles.friendsTitle}>Friends</Text>
           <FlatList
             data={friends}
@@ -440,40 +554,69 @@ export default function CameraScreen() {
   // Camera screen
   return (
     <View style={styles.container}>
-      <CameraView 
-        style={styles.camera} 
-        facing={cameraType}
-        ref={cameraRef}
-        onCameraReady={() => {
-          setCameraReady(true);
-        }}
-      >
-        <View style={styles.cameraControls}>
-          <TouchableOpacity style={styles.flipButton} onPress={flipCamera}>
-            <Ionicons name="camera-reverse" size={30} color="white" />
+      {cameraError ? (
+        <View style={styles.errorContainer}>
+          <Ionicons name="camera-off" size={60} color="white" />
+          <Text style={styles.errorText}>Camera failed to load</Text>
+          <TouchableOpacity 
+            style={styles.retryButton}
+            onPress={retryCamera}
+          >
+            <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
         </View>
-      </CameraView>
+      ) : (
+        <>
+          <CameraView 
+            style={styles.camera} 
+            facing={cameraType}
+            ref={cameraRef}
+            onCameraReady={() => {
+              console.log('Camera is ready');
+              setCameraReady(true);
+              setCameraInitializing(false);
+            }}
+            onMountError={(error) => {
+              console.error('Camera mount error:', error);
+              setCameraError(true);
+              setCameraInitializing(false);
+            }}
+          >
+            <View style={styles.cameraControls}>
+              <TouchableOpacity style={styles.flipButton} onPress={flipCamera}>
+                <Ionicons name="camera-reverse" size={30} color="white" />
+              </TouchableOpacity>
+            </View>
+          </CameraView>
 
-      <View style={styles.bottomControls}>
-        <TouchableOpacity style={styles.galleryButton} onPress={pickImage}>
-          <Ionicons name="images" size={30} color="white" />
-        </TouchableOpacity>
+          {cameraInitializing && (
+            <View style={styles.loadingOverlay}>
+              <ActivityIndicator size="large" color="white" />
+              <Text style={styles.loadingText}>Initializing camera...</Text>
+            </View>
+          )}
 
-        <TouchableOpacity 
-          style={[styles.captureButton, !cameraReady && styles.captureButtonDisabled]}
-          onPress={takePicture}
-          disabled={!cameraReady}
-        >
-          <View style={styles.captureInner} />
-        </TouchableOpacity>
+          <View style={styles.bottomControls}>
+            <TouchableOpacity style={styles.galleryButton} onPress={pickImage}>
+              <Ionicons name="images" size={30} color="white" />
+            </TouchableOpacity>
 
-        <TouchableOpacity style={styles.galleryButton} onPress={pickVideo}>
-          <Ionicons name="videocam" size={30} color="white" />
-        </TouchableOpacity>
-      </View>
+            <TouchableOpacity 
+              style={[styles.captureButton, !cameraReady && styles.captureButtonDisabled]}
+              onPress={takePicture}
+              disabled={!cameraReady}
+            >
+              <View style={styles.captureInner} />
+            </TouchableOpacity>
 
-      <Text style={styles.hint}>Tap center for photo • Use icons for gallery/video</Text>
+            <TouchableOpacity style={styles.galleryButton} onPress={pickVideo}>
+              <Ionicons name="videocam" size={30} color="white" />
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.hint}>Tap center for photo • Use icons for gallery/video</Text>
+        </>
+      )}
     </View>
   );
 }
@@ -554,6 +697,44 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: 'bold',
   },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  loadingText: {
+    color: 'white',
+    marginTop: 10,
+    fontSize: 16,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'black',
+  },
+  errorText: {
+    color: 'white',
+    fontSize: 18,
+    marginVertical: 20,
+  },
+  retryButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 30,
+    paddingVertical: 12,
+    borderRadius: 25,
+  },
+  retryText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
   
   // Edit screen styles
   editContainer: {
@@ -576,18 +757,6 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     resizeMode: 'contain',
-  },
-  videoPlaceholder: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  videoText: {
-    color: 'white',
-    fontSize: 18,
-    marginTop: 10,
   },
   editControls: {
     position: 'absolute',

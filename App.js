@@ -8,6 +8,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Colors } from './constants/Colors';
 import { auth } from './firebase';
+import CreateGroupScreen from './screens/CreateGroupScreen';
 import PreferencesScreen from './screens/PreferencesScreen';
 
 // Import screens
@@ -262,6 +263,15 @@ function App() {
                 headerTintColor: Colors.white,
               }}
             />
+
+            <Stack.Screen 
+  name="CreateGroup" 
+  component={CreateGroupScreen} 
+  options={{ 
+    headerShown: false,
+  }}
+/>
+
             <Stack.Screen 
               name="MyStories" 
               component={MyStoriesScreen} 

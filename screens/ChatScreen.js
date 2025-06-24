@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
-import { addDoc, collection, doc, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
 import React, { useEffect, useLayoutEffect, useState } from 'react';
 import {
+    Alert,
     FlatList,
     KeyboardAvoidingView,
     Platform,
@@ -11,18 +12,50 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import { Colors } from '../constants/Colors';
 import { auth, db } from '../firebase';
 
 export default function ChatScreen({ route, navigation }) {
-  const { chatId, chatName } = route.params;
+  const { chatId, chatName, chatType } = route.params;
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
+  const [chatInfo, setChatInfo] = useState(null);
 
   useLayoutEffect(() => {
     navigation.setOptions({
       title: chatName || 'Chat',
+      headerRight: () => (
+        chatType === 'group' && (
+          <TouchableOpacity
+            style={{ marginRight: 15 }}
+            onPress={() => {
+              Alert.alert(
+                'Group Info',
+                `${chatInfo?.participants?.length || 0} members`,
+                [{ text: 'OK' }]
+              );
+            }}
+          >
+            <Ionicons name="information-circle-outline" size={24} color={Colors.white} />
+          </TouchableOpacity>
+        )
+      ),
     });
-  }, [navigation, chatName]);
+  }, [navigation, chatName, chatType, chatInfo]);
+
+  useEffect(() => {
+    if (!chatId) return;
+    
+    // Load chat info for group features
+    const loadChatInfo = async () => {
+      const chatDoc = await getDoc(doc(db, 'chats', chatId));
+      if (chatDoc.exists()) {
+        setChatInfo(chatDoc.data());
+      }
+    };
+    
+    loadChatInfo();
+  }, [chatId]);
 
   useEffect(() => {
     if (!chatId) return;
@@ -69,8 +102,21 @@ export default function ChatScreen({ route, navigation }) {
 
   const renderMessage = ({ item }) => {
     const isMyMessage = item.senderId === auth.currentUser?.uid;
+    const isSystemMessage = item.senderId === 'system';
+    
+    if (isSystemMessage) {
+      return (
+        <View style={styles.systemMessageContainer}>
+          <Text style={styles.systemMessageText}>{item.text}</Text>
+        </View>
+      );
+    }
+    
     return (
       <View style={[styles.messageContainer, isMyMessage && styles.myMessageContainer]}>
+        {chatType === 'group' && !isMyMessage && (
+          <Text style={styles.senderName}>{item.senderName}</Text>
+        )}
         <Text style={[styles.messageText, isMyMessage && styles.myMessageText]}>
           {item.text}
         </Text>
@@ -157,6 +203,21 @@ const styles = StyleSheet.create({
   },
   myMessageTime: {
     color: 'rgba(255,255,255,0.7)',
+  },
+  systemMessageContainer: {
+    alignItems: 'center',
+    marginVertical: 10,
+  },
+  systemMessageText: {
+    fontSize: 12,
+    color: Colors.gray,
+    fontStyle: 'italic',
+  },
+  senderName: {
+    fontSize: 12,
+    color: Colors.primary,
+    marginBottom: 4,
+    fontWeight: 'bold',
   },
   inputContainer: {
     flexDirection: 'row',

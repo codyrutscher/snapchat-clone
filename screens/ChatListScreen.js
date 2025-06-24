@@ -53,6 +53,11 @@ export default function ChatListScreen({ navigation }) {
   };
 
   const getChatName = (chat) => {
+    // For group chats, return the group name
+    if (chat.type === 'group') {
+      return chat.name || 'Group Chat';
+    }
+    
     // For friend chats, show the friend's name
     if (chat.participantNames && chat.participants.length === 2) {
       const friendId = chat.participants.find(id => id !== auth.currentUser.uid);
@@ -66,14 +71,26 @@ export default function ChatListScreen({ navigation }) {
       style={styles.chatItem}
       onPress={() => navigation.navigate('ChatDetail', { 
         chatId: item.id, 
-        chatName: getChatName(item) 
+        chatName: getChatName(item),
+        chatType: item.type || 'direct'
       })}
     >
       <View style={styles.avatarContainer}>
-        <Ionicons name="person-circle" size={50} color={Colors.primary} />
+        <Ionicons 
+          name={item.type === 'group' ? 'people-circle' : 'person-circle'} 
+          size={50} 
+          color={Colors.primary} 
+        />
       </View>
       <View style={styles.chatInfo}>
-        <Text style={styles.chatName}>{getChatName(item)}</Text>
+        <View style={styles.chatHeader}>
+          <Text style={styles.chatName}>{getChatName(item)}</Text>
+          {item.type === 'group' && (
+            <View style={styles.groupBadge}>
+              <Text style={styles.groupBadgeText}>GROUP</Text>
+            </View>
+          )}
+        </View>
         <Text style={styles.lastMessage}>
           {item.lastMessage || 'Start a conversation'}
         </Text>
@@ -113,12 +130,21 @@ export default function ChatListScreen({ navigation }) {
       )}
 
       {friends.length > 0 && (
-        <TouchableOpacity 
-          style={styles.floatingButton} 
-          onPress={navigateToAddFriends}
-        >
-          <Ionicons name="person-add" size={24} color={Colors.white} />
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity 
+            style={[styles.floatingButton, styles.createGroupButton]} 
+            onPress={() => navigation.navigate('CreateGroup')}
+          >
+            <Ionicons name="people" size={24} color={Colors.white} />
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.floatingButton} 
+            onPress={navigateToAddFriends}
+          >
+            <Ionicons name="person-add" size={24} color={Colors.white} />
+          </TouchableOpacity>
+        </>
       )}
     </View>
   );
@@ -152,15 +178,31 @@ const styles = StyleSheet.create({
   chatInfo: {
     flex: 1,
   },
+  chatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   chatName: {
     fontSize: 16,
     fontWeight: 'bold',
     color: Colors.black,
-    marginBottom: 5,
+  },
+  groupBadge: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  groupBadgeText: {
+    color: Colors.white,
+    fontSize: 10,
+    fontWeight: 'bold',
   },
   lastMessage: {
     fontSize: 14,
     color: Colors.gray,
+    marginTop: 5,
   },
   emptyContainer: {
     flex: 1,
@@ -207,5 +249,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 5,
+  },
+  createGroupButton: {
+    bottom: 90,
+    backgroundColor: Colors.success,
   },
 });

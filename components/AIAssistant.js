@@ -23,7 +23,7 @@ export function CaptionSuggestions({ imageContext, onSelect }) {
   const loadCaptions = async () => {
     setLoading(true);
     try {
-      const suggestions = await OpenAIService.generateCaptions(imageContext);
+      const suggestions = await OpenAIService.generateIntelligentCaptions(imageContext);
       setCaptions(suggestions);
     } catch (error) {
       console.error('Error loading captions:', error);
@@ -58,6 +58,67 @@ export function CaptionSuggestions({ imageContext, onSelect }) {
       <TouchableOpacity style={styles.refreshButton} onPress={loadCaptions}>
         <Ionicons name="refresh" size={16} color={Colors.primary} />
       </TouchableOpacity>
+    </View>
+  );
+}
+
+export function FriendRecommendations({ onSelectUser }) {
+  const [recommendations, setRecommendations] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadRecommendations();
+  }, []);
+
+  const loadRecommendations = async () => {
+    try {
+      const recs = await OpenAIService.generateFriendRecommendations();
+      setRecommendations(recs);
+    } catch (error) {
+      console.error('Error loading recommendations:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="small" color={Colors.primary} />
+        <Text style={styles.loadingText}>Finding perfect matches...</Text>
+      </View>
+    );
+  }
+
+  if (recommendations.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={styles.recommendationsContainer}>
+      <Text style={styles.recommendationsTitle}>Suggested Friends</Text>
+      {recommendations.map((rec, index) => (
+        <TouchableOpacity
+          key={index}
+          style={styles.recommendationCard}
+          onPress={() => onSelectUser(rec)}
+        >
+          <View style={styles.recommendationInfo}>
+            <Text style={styles.recommendationName}>{rec.username}</Text>
+            <Text style={styles.recommendationReason}>{rec.reason}</Text>
+            {rec.commonInterests.length > 0 && (
+              <View style={styles.interestsRow}>
+                {rec.commonInterests.map((interest, i) => (
+                  <View key={i} style={styles.interestBadge}>
+                    <Text style={styles.interestText}>{interest}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+          <Ionicons name="person-add" size={24} color={Colors.primary} />
+        </TouchableOpacity>
+      ))}
     </View>
   );
 }
@@ -175,6 +236,8 @@ export function BestTimeIndicator() {
     </View>
   );
 }
+
+// Continue in next part...
 
 export function SmartReplyBar({ snapContext, onSelectReply }) {
   const [replies, setReplies] = useState([]);
@@ -316,7 +379,7 @@ export function FriendshipInsights() {
       </ScrollView>
     </View>
   );
-} 
+}
 
 export function SmartFilterRecommendations({ imageAnalysis, onSelectFilter, currentFilter }) {
   const [recommendations, setRecommendations] = useState([]);
@@ -397,6 +460,61 @@ const styles = StyleSheet.create({
     right: 10,
     padding: 5,
   },
+  recommendationsContainer: {
+    backgroundColor: Colors.white,
+    padding: 15,
+    marginVertical: 10,
+    marginHorizontal: 10,
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  recommendationsTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: Colors.primary,
+    marginBottom: 10,
+  },
+  recommendationCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.lightGray,
+  },
+  recommendationInfo: {
+    flex: 1,
+  },
+  recommendationName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: Colors.black,
+  },
+  recommendationReason: {
+    fontSize: 14,
+    color: Colors.gray,
+    marginTop: 2,
+  },
+  interestsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 5,
+  },
+  interestBadge: {
+    backgroundColor: Colors.primary + '20',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginRight: 5,
+    marginTop: 3,
+  },
+  interestText: {
+    fontSize: 12,
+    color: Colors.primary,
+  },
   ideaButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -451,150 +569,68 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.lightGray,
   },
-
   replyBar: {
-  backgroundColor: 'rgba(255,255,255,0.95)',
-  padding: 15,
-  borderTopLeftRadius: 20,
-  borderTopRightRadius: 20,
-},
-replyTitle: {
-  fontSize: 12,
-  color: Colors.gray,
-  marginBottom: 10,
-},
-replyChip: {
-  backgroundColor: Colors.primary,
-  paddingHorizontal: 20,
-  paddingVertical: 10,
-  borderRadius: 20,
-  marginRight: 10,
-},
-replyText: {
-  color: 'white',
-  fontWeight: 'bold',
-},
-insightsContainer: {
-  flex: 1,
-},
-insightsSection: {
-  marginBottom: 20,
-},
-insightsSectionTitle: {
-  fontSize: 18,
-  fontWeight: 'bold',
-  marginBottom: 15,
-  color: Colors.black,
-},
-insightCard: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  backgroundColor: Colors.primary + '10',
-  padding: 15,
-  borderRadius: 10,
-  marginBottom: 10,
-},
-insightText: {
-  flex: 1,
-  marginLeft: 10,
-  fontSize: 14,
-  color: Colors.black,
-},
-recommendationCard: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  backgroundColor: Colors.success + '10',
-  padding: 15,
-  borderRadius: 10,
-  marginBottom: 10,
-},
-recommendationText: {
-  flex: 1,
-  marginLeft: 10,
-  fontSize: 14,
-  color: Colors.black,
-},
-loadingContainer: {
-  flex: 1,
-  justifyContent: 'center',
-  alignItems: 'center',
-  padding: 20,
-},
-loadingText: {
-  marginTop: 10,
-  fontSize: 16,
-  color: Colors.gray,
-},
-insightCard: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  backgroundColor: Colors.primary + '10',
-  padding: 15,
-  borderRadius: 10,
-  marginBottom: 10,
-},
-insightText: {
-  flex: 1,
-  marginLeft: 10,
-  fontSize: 14,
-  color: Colors.black,
-},
-sectionTitle: {
-  fontSize: 16,
-  fontWeight: 'bold',
-  marginTop: 20,
-  marginBottom: 10,
-},
-recommendationCard: {
-  backgroundColor: Colors.success + '10',
-  padding: 15,
-  borderRadius: 10,
-  marginBottom: 10,
-},
-recommendationText: {
-  fontSize: 14,
-  color: Colors.black,
-},
-filterOption: {
-  alignItems: 'center',
-  marginRight: 15,
-  padding: 10,
-},
-selectedFilter: {
-  backgroundColor: Colors.primary + '20',
-  borderRadius: 10,
-},
-filterPreview: {
-  width: 60,
-  height: 60,
-  borderRadius: 10,
-  backgroundColor: '#f0f0f0',
-  marginBottom: 5,
-},
-filterName: {
-  fontSize: 14,
-  fontWeight: 'bold',
-},
-filterReason: {
-  fontSize: 10,
-  color: Colors.gray,
-  textAlign: 'center',
-  marginTop: 2,
-},
-aiRecommendedBadge: {
-  position: 'absolute',
-  top: 0,
-  right: 0,
-  backgroundColor: Colors.primary,
-  paddingHorizontal: 8,
-  paddingVertical: 2,
-  borderRadius: 10,
-},
-aiBadgeText: {
-  color: 'white',
-  fontSize: 10,
-  fontWeight: 'bold',
-},
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    padding: 15,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  replyTitle: {
+    fontSize: 12,
+    color: Colors.gray,
+    marginBottom: 10,
+  },
+  replyChip: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginRight: 10,
+  },
+  replyText: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  filterOption: {
+    alignItems: 'center',
+    marginRight: 15,
+    padding: 10,
+  },
+  selectedFilter: {
+    backgroundColor: Colors.primary + '20',
+    borderRadius: 10,
+  },
+  filterPreview: {
+    width: 60,
+    height: 60,
+    borderRadius: 10,
+    backgroundColor: '#f0f0f0',
+    marginBottom: 5,
+  },
+  filterName: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  filterReason: {
+    fontSize: 10,
+    color: Colors.gray,
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  aiRecommendedBadge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  aiBadgeText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
   ideaText: {
     fontSize: 16,
     color: Colors.black,

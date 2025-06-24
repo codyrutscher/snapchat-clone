@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { FriendRecommendations } from '../components/AIAssistant';
 import {
     addDoc,
     arrayUnion,
@@ -467,6 +468,19 @@ export default function AddFriendsScreen({ navigation }) {
             scrollEnabled={false}
           />
         </View>
+      )}
+
+      {searchResults.length === 0 && friendRequests.length === 0 && sentRequests.length === 0 && (
+        <FriendRecommendations 
+          onSelectUser={(user) => {
+            setSearchResults([{
+              id: user.userId,
+              username: user.username,
+              displayUsername: user.username,
+              email: 'Suggested friend'
+            }]);
+          }}
+        />
       )}
 
       {searchResults.length > 0 && (

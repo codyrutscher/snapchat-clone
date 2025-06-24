@@ -67,6 +67,195 @@ class OpenAIService {
     }
   }
 
+  async gatherComprehensiveContext() {
+    try {
+      if (!auth.currentUser) return {};
+      
+      // Get user preferences
+      const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+      const userData = userDoc.data() || {};
+      const preferences = userData.preferences || {};
+      
+      // Analyze recent conversations
+      const conversationContext = await this.analyzeRecentConversations();
+      
+      // Analyze snap history
+      const snapContext = await this.analyzeSnapHistory();
+      
+      // Analyze friend interactions
+      const friendContext = await this.analyzeFriendInteractions();
+      
+      return {
+        user: {
+          username: userData.username,
+          preferences: preferences,
+          interests: preferences.interests || [],
+          personality: preferences.personality || 'balanced',
+          humor: preferences.humor || 'mixed',
+          communicationStyle: preferences.preferredChatStyle || 'casual',
+          friends: userData.friends || []
+        },
+        conversations: conversationContext,
+        snapHistory: snapContext,
+        friendships: friendContext,
+        currentTime: new Date().getHours(),
+        dayOfWeek: new Date().toLocaleDateString('en-US', { weekday: 'long' })
+      };
+    } catch (error) {
+      console.error('Error gathering context:', error);
+      return {};
+    }
+  }
+
+  async analyzeRecentConversations() {
+    try {
+      const chatsQuery = query(
+        collection(db, 'chats'),
+        where('participants', 'array-contains', auth.currentUser.uid)
+      );
+      
+      const snapshot = await getDocs(chatsQuery);
+      const recentTopics = [];
+      const conversationTones = [];
+      const activeConversations = [];
+      
+      for (const chatDoc of snapshot.docs) {
+        const messagesQuery = query(
+          collection(db, 'chats', chatDoc.id, 'messages'),
+          orderBy('timestamp', 'desc'),
+          limit(20)
+        );
+        
+        const messagesSnapshot = await getDocs(messagesQuery);
+        const messages = messagesSnapshot.docs.map(doc => doc.data());
+        
+        // Extract topics and tone
+        messages.forEach(msg => {
+          if (msg.text) {
+            // Simple topic extraction (you could enhance this)
+            if (msg.text.length > 20) {
+              recentTopics.push(msg.text.substring(0, 50));
+            }
+          }
+        });
+        
+        if (messages.length > 0) {
+          const chatData = chatDoc.data();
+          activeConversations.push({
+            participantName: this.getOtherParticipantName(chatData, auth.currentUser.uid),
+            lastActivity: messages[0].timestamp,
+            messageCount: messages.length
+          });
+        }
+      }
+      
+      return {
+        recentTopics: recentTopics.slice(0, 5),
+        activeConversations: activeConversations.slice(0, 3),
+        totalConversations: snapshot.size
+      };
+    } catch (error) {
+      console.error('Error analyzing conversations:', error);
+      return {};
+    }
+  }
+
+  async analyzeSnapHistory() {
+    try {
+      const snapsQuery = query(
+        collection(db, 'snaps'),
+        where('userId', '==', auth.currentUser.uid),
+        limit(30)
+      );
+      
+      const snapshot = await getDocs(snapsQuery);
+      const snapPatterns = {
+        filters: {},
+        backgrounds: {},
+        borders: {},
+        captionStyles: [],
+        postingTimes: []
+      };
+      
+      snapshot.forEach(doc => {
+        const snap = doc.data();
+        if (snap.metadata) {
+          // Track filter usage
+          if (snap.metadata.filter) {
+            snapPatterns.filters[snap.metadata.filter] = (snapPatterns.filters[snap.metadata.filter] || 0) + 1;
+          }
+          
+          // Track background usage
+          if (snap.metadata.background) {
+            snapPatterns.backgrounds[snap.metadata.background] = (snapPatterns.backgrounds[snap.metadata.background] || 0) + 1;
+          }
+          
+          // Track caption styles
+          if (snap.metadata.text) {
+            snapPatterns.captionStyles.push({
+              length: snap.metadata.text.length,
+              hasEmoji: /[\u{1F600}-\u{1F64F}]/gu.test(snap.metadata.text),
+              style: snap.metadata.text.length < 20 ? 'short' : 'long'
+            });
+          }
+        }
+        
+        // Track posting times
+        if (snap.timestamp) {
+          snapPatterns.postingTimes.push(new Date(snap.timestamp).getHours());
+        }
+      });
+      
+      return snapPatterns;
+    } catch (error) {
+      console.error('Error analyzing snap history:', error);
+      return {};
+    }
+  }
+
+  async analyzeFriendInteractions() {
+    try {
+      const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+      const friends = userDoc.data()?.friends || [];
+      
+      const friendInteractions = [];
+      
+      for (const friendId of friends.slice(0, 10)) { // Analyze top 10 friends
+        const friendDoc = await getDoc(doc(db, 'users', friendId));
+        if (friendDoc.exists()) {
+          const friendData = friendDoc.data();
+          
+          // Count snaps sent to this friend
+          const snapsToFriend = await getDocs(query(
+            collection(db, 'snaps'),
+            where('userId', '==', auth.currentUser.uid),
+            where('recipientId', '==', friendId),
+            limit(10)
+          ));
+          
+          friendInteractions.push({
+            friendId: friendId,
+            friendName: friendData.username,
+            interests: friendData.preferences?.interests || [],
+            snapCount: snapsToFriend.size,
+            communicationStyle: friendData.preferences?.preferredChatStyle || 'unknown'
+          });
+        }
+      }
+      
+      return friendInteractions.sort((a, b) => b.snapCount - a.snapCount);
+    } catch (error) {
+      console.error('Error analyzing friend interactions:', error);
+      return [];
+    }
+  }
+
+  getOtherParticipantName(chatData, currentUserId) {
+    if (chatData.type === 'group') return chatData.name;
+    const otherId = chatData.participants.find(id => id !== currentUserId);
+    return chatData.participantNames?.[otherId] || 'Friend';
+  }
+
   analyzePostingStyle(snaps) {
     const style = {
       averageCaptionLength: 0,
@@ -102,23 +291,52 @@ class OpenAIService {
     return style;
   }
 
-  // 1. Smart Caption Generator
+  // 1. Smart Caption Generator - Now with enhanced intelligence
   async generateCaptions(imageContext = {}) {
+    return this.generateIntelligentCaptions(imageContext);
+  }
+
+  async generateIntelligentCaptions(imageContext = {}) {
+    const comprehensiveContext = await this.gatherComprehensiveContext();
+    
     if (!this.openai) {
-      return this.fallbackCaptionGenerator(imageContext);
+      return this.contextAwareFallbackCaptions(comprehensiveContext, imageContext);
     }
 
     try {
-      const { filter, mood, time = new Date().getHours(), description } = imageContext;
+      const { filter, background, border, mediaType, recipientName } = imageContext;
       
-      const systemPrompt = `You are a creative social media caption writer. Generate short, engaging captions.`;
+      // Build a rich prompt with all context
+      const systemPrompt = `You are a social media caption writer who knows the user well. 
+      User personality: ${comprehensiveContext.user.personality}
+      Humor style: ${comprehensiveContext.user.humor}
+      Communication style: ${comprehensiveContext.user.communicationStyle}
+      Interests: ${comprehensiveContext.user.interests.join(', ')}
+      Recent conversation topics: ${comprehensiveContext.conversations.recentTopics?.join(', ')}`;
       
-      const userPrompt = `Generate 5 creative captions for a snap with:
-        - Time: ${time < 12 ? 'morning' : time < 17 ? 'afternoon' : 'evening'}
-        - Filter: ${filter || 'none'}
-        - Mood: ${mood || 'casual'}
-        
-        Make captions: short (10-30 chars), fun, use emojis sparingly, vary in style`;
+      let userPrompt = `Generate 5 captions for a ${mediaType || 'photo'} snap`;
+      
+      if (recipientName) {
+        const friendData = comprehensiveContext.friendships.find(f => f.friendName === recipientName);
+        if (friendData) {
+          userPrompt += `\nSending to: ${recipientName} (${friendData.communicationStyle} style)`;
+          if (friendData.interests.length > 0) {
+            userPrompt += `\nTheir interests: ${friendData.interests.join(', ')}`;
+          }
+        }
+      }
+      
+      userPrompt += `\nTime: ${comprehensiveContext.currentTime < 12 ? 'morning' : comprehensiveContext.currentTime < 17 ? 'afternoon' : 'evening'}`;
+      userPrompt += `\nDay: ${comprehensiveContext.dayOfWeek}`;
+      userPrompt += `\nVisual style: ${filter || 'none'} filter, ${background || 'none'} background`;
+      
+      // Analyze past caption patterns
+      if (comprehensiveContext.snapHistory?.captionStyles) {
+        const avgLength = comprehensiveContext.snapHistory.captionStyles.reduce((acc, s) => acc + s.length, 0) / comprehensiveContext.snapHistory.captionStyles.length;
+        userPrompt += `\nUser typically writes ${avgLength < 30 ? 'short' : 'medium'} captions`;
+      }
+      
+      userPrompt += '\n\nMake captions contextual, personalized, and match the user\'s style.';
       
       const completion = await this.openai.chat.completions.create({
         model: "gpt-3.5-turbo",
@@ -127,7 +345,7 @@ class OpenAIService {
           { role: "user", content: userPrompt }
         ],
         temperature: 0.8,
-        max_tokens: 200
+        max_tokens: 300
       });
       
       const captions = completion.choices[0].message.content
@@ -136,12 +354,56 @@ class OpenAIService {
         .map(line => line.replace(/^\d+\.\s*/, '').replace(/['"]/g, '').trim())
         .slice(0, 5);
       
-      return captions.length > 0 ? captions : this.fallbackCaptionGenerator(imageContext);
+      return captions;
     } catch (error) {
-      console.error('Error generating captions:', error);
-      return this.fallbackCaptionGenerator(imageContext);
+      console.error('Error generating intelligent captions:', error);
+      return this.contextAwareFallbackCaptions(comprehensiveContext, imageContext);
     }
   }
+
+  contextAwareFallbackCaptions(context, imageContext) {
+    const captions = [];
+    const hour = new Date().getHours();
+    const { personality, humor, interests } = context.user;
+    
+    // Time-based captions
+    if (hour < 12) {
+      captions.push("Morning vibes ☀️");
+      captions.push("Rise and shine!");
+    } else if (hour < 17) {
+      captions.push("Afternoon mood 🌤");
+      captions.push("Midday moments");
+    } else {
+      captions.push("Evening feels 🌙");
+      captions.push("Night mode activated");
+    }
+    
+    // Personality-based captions
+    if (personality === 'extrovert') {
+      captions.push("Living my best life!");
+      captions.push("Who's joining? 🎉");
+    } else if (personality === 'introvert') {
+      captions.push("My happy place");
+      captions.push("Peaceful moments");
+    }
+    
+    // Interest-based captions
+    if (interests && interests.length > 0) {
+      captions.push(`${interests[0]} vibes ✨`);
+    }
+    
+    // Filter-based captions
+    if (imageContext.filter === 'grayscale') {
+      captions.push("Classic mode 🖤");
+    } else if (imageContext.filter === 'saturate') {
+      captions.push("Color explosion 🌈");
+    }
+    
+    return captions.slice(0, 5);
+  }
+
+  // Continue in next part...
+
 
   // 2. Best Time to Post Analysis
   async analyzeBestPostingTime() {
@@ -225,177 +487,177 @@ class OpenAIService {
 
   // 5. Friendship Insights
   async analyzeFriendshipInsights() {
-  try {
-    console.log('Starting friendship insights analysis...');
-    
-    const friendData = await this.gatherFriendshipData();
-    
-    // Get user preferences
-    let userPreferences = {};
-    if (auth.currentUser) {
-      const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
-      if (userDoc.exists()) {
-        userPreferences = userDoc.data().preferences || {};
+    try {
+      console.log('Starting friendship insights analysis...');
+      
+      const friendData = await this.gatherFriendshipData();
+      
+      // Get user preferences
+      let userPreferences = {};
+      if (auth.currentUser) {
+        const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+        if (userDoc.exists()) {
+          userPreferences = userDoc.data().preferences || {};
+        }
       }
-    }
-    
-    console.log('User preferences:', userPreferences);
-    
-    // Generate insights based on actual data and preferences
-    const insights = [];
-    const recommendations = [];
-    
-    // Basic activity insights
-    if (friendData.totalFriends > 0) {
-      if (friendData.activeFriends > 0) {
-        const activeRate = Math.round((friendData.activeFriends / friendData.totalFriends) * 100);
-        insights.push(`You're actively chatting with ${activeRate}% of your friends`);
+      
+      console.log('User preferences:', userPreferences);
+      
+      // Generate insights based on actual data and preferences
+      const insights = [];
+      const recommendations = [];
+      
+      // Basic activity insights
+      if (friendData.totalFriends > 0) {
+        if (friendData.activeFriends > 0) {
+          const activeRate = Math.round((friendData.activeFriends / friendData.totalFriends) * 100);
+          insights.push(`You're actively chatting with ${activeRate}% of your friends`);
+          
+          if (activeRate < 50) {
+            recommendations.push("Reach out to friends you haven't talked to recently");
+          }
+        } else {
+          insights.push("You haven't chatted with any friends yet");
+          recommendations.push("Start a conversation to connect with your friends");
+        }
+      }
+      
+      // Top interaction insight
+      if (friendData.topInteractions && friendData.topInteractions.length > 0) {
+        const topFriend = friendData.topInteractions[0];
+        insights.push(`Your most active chat is with ${topFriend.name} (${topFriend.messageCount} messages)`);
         
-        if (activeRate < 50) {
-          recommendations.push("Reach out to friends you haven't talked to recently");
-        }
-      } else {
-        insights.push("You haven't chatted with any friends yet");
-        recommendations.push("Start a conversation to connect with your friends");
-      }
-    }
-    
-    // Top interaction insight
-    if (friendData.topInteractions && friendData.topInteractions.length > 0) {
-      const topFriend = friendData.topInteractions[0];
-      insights.push(`Your most active chat is with ${topFriend.name} (${topFriend.messageCount} messages)`);
-      
-      if (friendData.topInteractions.length > 1) {
-        const secondFriend = friendData.topInteractions[1];
-        if (topFriend.messageCount > secondFriend.messageCount * 3) {
-          recommendations.push("Try balancing your conversations across more friends");
+        if (friendData.topInteractions.length > 1) {
+          const secondFriend = friendData.topInteractions[1];
+          if (topFriend.messageCount > secondFriend.messageCount * 3) {
+            recommendations.push("Try balancing your conversations across more friends");
+          }
         }
       }
-    }
-    
-    // Message frequency insights based on preferences
-    if (userPreferences.messageFrequency) {
-      const avgMessagesPerFriend = friendData.activeFriends > 0 
-        ? Math.round(friendData.totalMessages / friendData.activeFriends)
-        : 0;
       
-      if (userPreferences.messageFrequency === 'high' && avgMessagesPerFriend < 10) {
-        insights.push("You prefer frequent chats but have been quieter than usual");
-        recommendations.push("Try sending a quick hello to 3 friends today");
-      } else if (userPreferences.messageFrequency === 'low' && avgMessagesPerFriend > 20) {
-        insights.push("You're chatting more than your usual preference");
-        recommendations.push("It's okay to take breaks from messaging when you need to");
-      }
-    }
-    
-    // Time-based insights
-    if (userPreferences.bestTimeToChat && friendData.chatPatterns) {
-      const preferredTime = userPreferences.bestTimeToChat;
-      const actualPercentage = friendData.chatPatterns[preferredTime] || 0;
-      
-      if (actualPercentage > 0) {
-        insights.push(`${actualPercentage}% of your chats happen during your preferred ${preferredTime} time`);
+      // Message frequency insights based on preferences
+      if (userPreferences.messageFrequency) {
+        const avgMessagesPerFriend = friendData.activeFriends > 0 
+          ? Math.round(friendData.totalMessages / friendData.activeFriends)
+          : 0;
         
-        if (actualPercentage < 30) {
-          recommendations.push(`Try scheduling more chats in the ${preferredTime} when you're most comfortable`);
+        if (userPreferences.messageFrequency === 'high' && avgMessagesPerFriend < 10) {
+          insights.push("You prefer frequent chats but have been quieter than usual");
+          recommendations.push("Try sending a quick hello to 3 friends today");
+        } else if (userPreferences.messageFrequency === 'low' && avgMessagesPerFriend > 20) {
+          insights.push("You're chatting more than your usual preference");
+          recommendations.push("It's okay to take breaks from messaging when you need to");
         }
       }
-    }
-    
-    // Personality-based insights
-    if (userPreferences.personality) {
-      if (userPreferences.personality === 'introvert') {
-        if (friendData.activeFriends > 5) {
-          insights.push("You're managing a large social circle well as an introvert!");
-          recommendations.push("Remember to take time for yourself between conversations");
+      
+      // Time-based insights
+      if (userPreferences.bestTimeToChat && friendData.chatPatterns) {
+        const preferredTime = userPreferences.bestTimeToChat;
+        const actualPercentage = friendData.chatPatterns[preferredTime] || 0;
+        
+        if (actualPercentage > 0) {
+          insights.push(`${actualPercentage}% of your chats happen during your preferred ${preferredTime} time`);
+          
+          if (actualPercentage < 30) {
+            recommendations.push(`Try scheduling more chats in the ${preferredTime} when you're most comfortable`);
+          }
         }
-      } else if (userPreferences.personality === 'extrovert') {
-        if (friendData.activeFriends < 3) {
-          insights.push("As an extrovert, you might enjoy connecting with more friends");
-          recommendations.push("Join group chats or reach out to new friends");
+      }
+      
+      // Personality-based insights
+      if (userPreferences.personality) {
+        if (userPreferences.personality === 'introvert') {
+          if (friendData.activeFriends > 5) {
+            insights.push("You're managing a large social circle well as an introvert!");
+            recommendations.push("Remember to take time for yourself between conversations");
+          }
+        } else if (userPreferences.personality === 'extrovert') {
+          if (friendData.activeFriends < 3) {
+            insights.push("As an extrovert, you might enjoy connecting with more friends");
+            recommendations.push("Join group chats or reach out to new friends");
+          }
         }
       }
-    }
-    
-    // Interest-based recommendations
-    if (userPreferences.interests && userPreferences.interests.length > 0) {
-      const randomInterest = userPreferences.interests[Math.floor(Math.random() * userPreferences.interests.length)];
-      recommendations.push(`Share something about ${randomInterest} with a friend today`);
-    }
-    
-    // Communication style recommendations
-    if (userPreferences.preferredChatStyle) {
-      switch (userPreferences.preferredChatStyle) {
-        case 'casual':
-          recommendations.push("Send a funny meme or emoji to brighten someone's day");
-          break;
-        case 'formal':
-          recommendations.push("Write a thoughtful message asking about someone's goals");
-          break;
-        case 'mixed':
-          recommendations.push("Mix it up with both casual jokes and deeper conversations");
-          break;
+      
+      // Interest-based recommendations
+      if (userPreferences.interests && userPreferences.interests.length > 0) {
+        const randomInterest = userPreferences.interests[Math.floor(Math.random() * userPreferences.interests.length)];
+        recommendations.push(`Share something about ${randomInterest} with a friend today`);
       }
-    }
-    
-    // Social preference insights
-    if (userPreferences.likesGroupChats) {
-      recommendations.push("Create a group chat for friends with similar interests");
-    }
-    
-    if (userPreferences.prefersVideoChats) {
-      recommendations.push("Suggest a video call to catch up more personally");
-    }
-    
-    // Humor style recommendation
-    if (userPreferences.humor) {
-      switch (userPreferences.humor) {
-        case 'sarcastic':
-          recommendations.push("Share a witty observation about your day");
-          break;
-        case 'wholesome':
-          recommendations.push("Send an encouraging message to someone who might need it");
-          break;
-        case 'witty':
-          recommendations.push("Start a fun wordplay or pun conversation");
-          break;
+      
+      // Communication style recommendations
+      if (userPreferences.preferredChatStyle) {
+        switch (userPreferences.preferredChatStyle) {
+          case 'casual':
+            recommendations.push("Send a funny meme or emoji to brighten someone's day");
+            break;
+          case 'formal':
+            recommendations.push("Write a thoughtful message asking about someone's goals");
+            break;
+          case 'mixed':
+            recommendations.push("Mix it up with both casual jokes and deeper conversations");
+            break;
+        }
       }
+      
+      // Social preference insights
+      if (userPreferences.likesGroupChats) {
+        recommendations.push("Create a group chat for friends with similar interests");
+      }
+      
+      if (userPreferences.prefersVideoChats) {
+        recommendations.push("Suggest a video call to catch up more personally");
+      }
+      
+      // Humor style recommendation
+      if (userPreferences.humor) {
+        switch (userPreferences.humor) {
+          case 'sarcastic':
+            recommendations.push("Share a witty observation about your day");
+            break;
+          case 'wholesome':
+            recommendations.push("Send an encouraging message to someone who might need it");
+            break;
+          case 'witty':
+            recommendations.push("Start a fun wordplay or pun conversation");
+            break;
+        }
+      }
+      
+      // Make sure we always have some insights
+      if (insights.length === 0) {
+        insights.push("Complete your preferences to get personalized insights");
+        insights.push("Start chatting to see your communication patterns");
+      }
+      
+      if (recommendations.length === 0) {
+        recommendations.push("Send a snap to connect with friends");
+        recommendations.push("Update your preferences for better recommendations");
+      }
+      
+      console.log('Generated insights:', insights);
+      console.log('Generated recommendations:', recommendations);
+      
+      return {
+        insights: insights.slice(0, 5), // Limit to 5 insights
+        recommendations: recommendations.slice(0, 3), // Limit to 3 recommendations
+        preferences: userPreferences
+      };
+    } catch (error) {
+      console.error('Error analyzing friendships:', error);
+      return {
+        insights: [
+          "We're having trouble loading your insights",
+          "Try chatting with friends to generate data",
+          "Make sure your preferences are saved"
+        ],
+        recommendations: [
+          "Check your internet connection",
+          "Update your preferences in settings"
+        ]
+      };
     }
-    
-    // Make sure we always have some insights
-    if (insights.length === 0) {
-      insights.push("Complete your preferences to get personalized insights");
-      insights.push("Start chatting to see your communication patterns");
-    }
-    
-    if (recommendations.length === 0) {
-      recommendations.push("Send a snap to connect with friends");
-      recommendations.push("Update your preferences for better recommendations");
-    }
-    
-    console.log('Generated insights:', insights);
-    console.log('Generated recommendations:', recommendations);
-    
-    return {
-      insights: insights.slice(0, 5), // Limit to 5 insights
-      recommendations: recommendations.slice(0, 3), // Limit to 3 recommendations
-      preferences: userPreferences
-    };
-  } catch (error) {
-    console.error('Error analyzing friendships:', error);
-    return {
-      insights: [
-        "We're having trouble loading your insights",
-        "Try chatting with friends to generate data",
-        "Make sure your preferences are saved"
-      ],
-      recommendations: [
-        "Check your internet connection",
-        "Update your preferences in settings"
-      ]
-    };
   }
-}
 
   // 6. Filter Recommendations
   async recommendFilters(imageAnalysis = {}) {
@@ -418,6 +680,94 @@ class OpenAIService {
     return recommendations.slice(0, 4);
   }
 
+  // 7. Friend Recommendations
+  async generateFriendRecommendations() {
+    const context = await this.gatherComprehensiveContext();
+    
+    try {
+      // Get all users
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      const currentUserFriends = context.user.friends || [];
+      const recommendations = [];
+      
+      usersSnapshot.forEach(doc => {
+        if (doc.id === auth.currentUser.uid) return; // Skip self
+        if (currentUserFriends.includes(doc.id)) return; // Skip existing friends
+        
+        const userData = doc.data();
+        let score = 0;
+        
+        // Calculate compatibility score based on interests
+        if (userData.preferences?.interests && context.user.interests) {
+          const commonInterests = userData.preferences.interests.filter(
+            interest => context.user.interests.includes(interest)
+          );
+          score += commonInterests.length * 10;
+        }
+        
+        // Personality compatibility
+        if (userData.preferences?.personality === context.user.personality) {
+          score += 5;
+        }
+        
+        // Communication style match
+        if (userData.preferences?.preferredChatStyle === context.user.communicationStyle) {
+          score += 5;
+        }
+        
+        // Similar posting times
+        if (userData.preferences?.bestTimeToChat === context.user.preferences?.bestTimeToChat) {
+          score += 3;
+        }
+        
+        if (score > 0) {
+          recommendations.push({
+            userId: doc.id,
+            username: userData.username,
+            score: score,
+            commonInterests: userData.preferences?.interests?.filter(
+              interest => context.user.interests?.includes(interest)
+            ) || [],
+            reason: this.generateRecommendationReason(userData, context, score)
+          });
+        }
+      });
+      
+      // Sort by score and return top 5
+      return recommendations
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5);
+    } catch (error) {
+      console.error('Error generating friend recommendations:', error);
+      return [];
+    }
+  }
+
+  generateRecommendationReason(userData, context, score) {
+    const reasons = [];
+    
+    if (userData.preferences?.interests && context.user.interests) {
+      const common = userData.preferences.interests.filter(
+        i => context.user.interests.includes(i)
+      );
+      if (common.length > 0) {
+        reasons.push(`Shares your interest in ${common[0]}`);
+      }
+    }
+    
+    if (userData.preferences?.personality === context.user.personality) {
+      reasons.push(`Fellow ${context.user.personality}`);
+    }
+    
+    if (userData.preferences?.humor === context.user.humor) {
+      reasons.push(`Similar sense of humor`);
+    }
+    
+    return reasons[0] || 'Potential great connection';
+  }
+
+  // Continue with remaining helper methods...
+
   // Helper methods
   async gatherEngagementData() {
     return {
@@ -428,127 +778,127 @@ class OpenAIService {
   }
 
   async gatherFriendshipData() {
-  try {
-    if (!auth.currentUser) return {};
-    
-    console.log('Gathering friendship data for:', auth.currentUser.uid);
-    
-    // Get user's data
-    const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
-    const userData = userDoc.data() || {};
-    const friendsCount = userData.friends?.length || 0;
-    
-    console.log('Total friends:', friendsCount);
-    
-    // Get user's chats
-    const chatsQuery = query(
-      collection(db, 'chats'),
-      where('participants', 'array-contains', auth.currentUser.uid)
-    );
-    
-    const chatsSnapshot = await getDocs(chatsQuery);
-    const chatActivity = {};
-    const messageCount = {};
-    let totalMessages = 0;
-    const chatPatterns = {
-      morning: 0,
-      afternoon: 0,
-      evening: 0,
-      night: 0
-    };
-    
-    console.log('Total chats found:', chatsSnapshot.size);
-    
-    // Analyze each chat
-    for (const chatDoc of chatsSnapshot.docs) {
-      const chatData = chatDoc.data();
-      const otherParticipant = chatData.participants.find(id => id !== auth.currentUser.uid);
+    try {
+      if (!auth.currentUser) return {};
       
-      if (otherParticipant) {
-        // Get messages from this chat
-        const messagesQuery = query(
-          collection(db, 'chats', chatDoc.id, 'messages'),
-          orderBy('timestamp', 'desc'),
-          limit(50)
-        );
+      console.log('Gathering friendship data for:', auth.currentUser.uid);
+      
+      // Get user's data
+      const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+      const userData = userDoc.data() || {};
+      const friendsCount = userData.friends?.length || 0;
+      
+      console.log('Total friends:', friendsCount);
+      
+      // Get user's chats
+      const chatsQuery = query(
+        collection(db, 'chats'),
+        where('participants', 'array-contains', auth.currentUser.uid)
+      );
+      
+      const chatsSnapshot = await getDocs(chatsQuery);
+      const chatActivity = {};
+      const messageCount = {};
+      let totalMessages = 0;
+      const chatPatterns = {
+        morning: 0,
+        afternoon: 0,
+        evening: 0,
+        night: 0
+      };
+      
+      console.log('Total chats found:', chatsSnapshot.size);
+      
+      // Analyze each chat
+      for (const chatDoc of chatsSnapshot.docs) {
+        const chatData = chatDoc.data();
+        const otherParticipant = chatData.participants.find(id => id !== auth.currentUser.uid);
         
-        try {
-          const messagesSnapshot = await getDocs(messagesQuery);
-          const messages = messagesSnapshot.docs.map(doc => doc.data());
+        if (otherParticipant) {
+          // Get messages from this chat
+          const messagesQuery = query(
+            collection(db, 'chats', chatDoc.id, 'messages'),
+            orderBy('timestamp', 'desc'),
+            limit(50)
+          );
           
-          console.log(`Chat ${chatDoc.id} has ${messages.length} messages`);
-          
-          // Count messages per friend
-          messageCount[otherParticipant] = messages.length;
-          totalMessages += messages.length;
-          
-          // Analyze message times
-          messages.forEach(msg => {
-            const hour = new Date(msg.timestamp).getHours();
-            if (hour >= 5 && hour < 12) chatPatterns.morning++;
-            else if (hour >= 12 && hour < 17) chatPatterns.afternoon++;
-            else if (hour >= 17 && hour < 22) chatPatterns.evening++;
-            else chatPatterns.night++;
-          });
-          
-          // Analyze last activity
-          if (messages.length > 0) {
-            const lastMessage = messages[0];
-            chatActivity[otherParticipant] = {
-              lastActivity: lastMessage.timestamp,
-              messageCount: messages.length,
-              friendName: chatData.participantNames?.[otherParticipant] || 'Friend'
-            };
+          try {
+            const messagesSnapshot = await getDocs(messagesQuery);
+            const messages = messagesSnapshot.docs.map(doc => doc.data());
+            
+            console.log(`Chat ${chatDoc.id} has ${messages.length} messages`);
+            
+            // Count messages per friend
+            messageCount[otherParticipant] = messages.length;
+            totalMessages += messages.length;
+            
+            // Analyze message times
+            messages.forEach(msg => {
+              const hour = new Date(msg.timestamp).getHours();
+              if (hour >= 5 && hour < 12) chatPatterns.morning++;
+              else if (hour >= 12 && hour < 17) chatPatterns.afternoon++;
+              else if (hour >= 17 && hour < 22) chatPatterns.evening++;
+              else chatPatterns.night++;
+            });
+            
+            // Analyze last activity
+            if (messages.length > 0) {
+              const lastMessage = messages[0];
+              chatActivity[otherParticipant] = {
+                lastActivity: lastMessage.timestamp,
+                messageCount: messages.length,
+                friendName: chatData.participantNames?.[otherParticipant] || 'Friend'
+              };
+            }
+          } catch (error) {
+            console.log('Error getting messages for chat:', chatDoc.id, error);
           }
-        } catch (error) {
-          console.log('Error getting messages for chat:', chatDoc.id, error);
         }
       }
+      
+      // Calculate pattern percentages
+      const totalPatternMessages = Object.values(chatPatterns).reduce((a, b) => a + b, 0);
+      if (totalPatternMessages > 0) {
+        Object.keys(chatPatterns).forEach(time => {
+          chatPatterns[time] = Math.round((chatPatterns[time] / totalPatternMessages) * 100);
+        });
+      }
+      
+      // Calculate insights data
+      const activeFriends = Object.keys(chatActivity);
+      const topChats = Object.entries(chatActivity)
+        .sort((a, b) => b[1].messageCount - a[1].messageCount)
+        .slice(0, 3);
+      
+      const result = {
+        totalFriends: friendsCount,
+        activeFriends: activeFriends.length,
+        totalMessages,
+        topInteractions: topChats.map(([id, data]) => ({
+          id,
+          name: data.friendName,
+          messageCount: data.messageCount,
+          lastActivity: data.lastActivity
+        })),
+        inactiveFriends: friendsCount - activeFriends.length,
+        chatPatterns
+      };
+      
+      console.log('Friendship data gathered:', result);
+      
+      return result;
+    } catch (error) {
+      console.error('Error gathering friendship data:', error);
+      return {
+        totalFriends: 0,
+        activeFriends: 0,
+        totalMessages: 0,
+        topInteractions: [],
+        inactiveFriends: 0,
+        chatPatterns: {}
+      };
     }
-    
-    // Calculate pattern percentages
-    const totalPatternMessages = Object.values(chatPatterns).reduce((a, b) => a + b, 0);
-    if (totalPatternMessages > 0) {
-      Object.keys(chatPatterns).forEach(time => {
-        chatPatterns[time] = Math.round((chatPatterns[time] / totalPatternMessages) * 100);
-      });
-    }
-    
-    // Calculate insights data
-    const activeFriends = Object.keys(chatActivity);
-    const topChats = Object.entries(chatActivity)
-      .sort((a, b) => b[1].messageCount - a[1].messageCount)
-      .slice(0, 3);
-    
-    const result = {
-      totalFriends: friendsCount,
-      activeFriends: activeFriends.length,
-      totalMessages,
-      topInteractions: topChats.map(([id, data]) => ({
-        id,
-        name: data.friendName,
-        messageCount: data.messageCount,
-        lastActivity: data.lastActivity
-      })),
-      inactiveFriends: friendsCount - activeFriends.length,
-      chatPatterns
-    };
-    
-    console.log('Friendship data gathered:', result);
-    
-    return result;
-  } catch (error) {
-    console.error('Error gathering friendship data:', error);
-    return {
-      totalFriends: 0,
-      activeFriends: 0,
-      totalMessages: 0,
-      topInteractions: [],
-      inactiveFriends: 0,
-      chatPatterns: {}
-    };
   }
-}
 
   parseInsights(text) {
     const lines = text.split('\n').filter(line => line.trim());

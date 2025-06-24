@@ -8,6 +8,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Colors } from './constants/Colors';
 import { auth } from './firebase';
+import PreferencesScreen from './screens/PreferencesScreen';
 
 // Import screens
 import AddFriendsScreen from './screens/AddFriendsScreen';
@@ -273,6 +274,19 @@ function App() {
                 headerTintColor: Colors.white,
               }}
             />
+
+            <Stack.Screen 
+  name="Preferences" 
+  component={PreferencesScreen} 
+  options={{ 
+    headerShown: true, 
+    title: 'My Preferences',
+    headerStyle: {
+      backgroundColor: Colors.primary,
+    },
+    headerTintColor: Colors.white,
+  }}
+/>
           </>
         )}
       </Stack.Navigator>

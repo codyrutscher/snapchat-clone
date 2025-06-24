@@ -108,20 +108,16 @@ export default function StoriesScreen() {
           <View style={styles.header}>
             <Text style={styles.title}>Stories</Text>
             <StoryIdeasWidget 
-              onSelectIdea={(idea) => {
-                Alert.alert(
-                  'Story Idea',
-                  idea,
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    { 
-                      text: 'Create Story', 
-                      onPress: () => navigation.navigate('Camera', { storyIdea: idea })
-                    }
-                  ]
-                );
-              }}
-            />
+  onSelectIdea={(idea) => {
+    Alert.alert(
+      'Story Idea Selected',
+      `"${idea}"\n\nGo to the camera when you're ready to create this story!`,
+      [
+        { text: 'Got it!', style: 'default' }
+      ]
+    );
+  }}
+/>
           </View>
           <FlatList
             data={stories}

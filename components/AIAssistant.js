@@ -226,11 +226,17 @@ export function FriendshipInsights() {
   }, []);
 
   const loadInsights = async () => {
+    console.log('Loading friendship insights...');
     try {
       const data = await OpenAIService.analyzeFriendshipInsights();
+      console.log('Insights received:', data);
       setInsights(data);
     } catch (error) {
       console.error('Error loading insights:', error);
+      setInsights({
+        insights: ['Error loading insights'],
+        recommendations: ['Please try again later']
+      });
     } finally {
       setLoading(false);
     }
@@ -238,31 +244,79 @@ export function FriendshipInsights() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={{ padding: 20, alignItems: 'center' }}>
         <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Analyzing your friendships...</Text>
+        <Text style={{ marginTop: 10, fontSize: 16, color: Colors.gray }}>
+          Analyzing your friendships...
+        </Text>
+      </View>
+    );
+  }
+
+  if (!insights || !insights.insights) {
+    return (
+      <View style={{ padding: 20, alignItems: 'center' }}>
+        <Text style={{ fontSize: 16, color: Colors.gray }}>
+          No insights available
+        </Text>
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.insightsContainer}>
-      {insights?.insights.map((insight, index) => (
-        <View key={index} style={styles.insightCard}>
-          <Ionicons name="bulb-outline" size={20} color={Colors.primary} />
-          <Text style={styles.insightText}>{insight}</Text>
+    <View style={{ flex: 1 }}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }}>
+        <View style={{ marginBottom: 20 }}>
+          <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 15, color: Colors.black }}>
+            Your Insights
+          </Text>
+          {insights.insights.map((insight, index) => (
+            <View 
+              key={index} 
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: Colors.primary + '10',
+                padding: 15,
+                borderRadius: 10,
+                marginBottom: 10,
+              }}
+            >
+              <Ionicons name="bulb-outline" size={20} color={Colors.primary} />
+              <Text style={{ flex: 1, marginLeft: 10, fontSize: 14, color: Colors.black }}>
+                {insight}
+              </Text>
+            </View>
+          ))}
         </View>
-      ))}
-      
-      <Text style={styles.sectionTitle}>Recommendations</Text>
-      {insights?.recommendations.map((rec, index) => (
-        <View key={index} style={styles.recommendationCard}>
-          <Text style={styles.recommendationText}>{rec}</Text>
+        
+        <View>
+          <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 15, color: Colors.black }}>
+            Recommendations
+          </Text>
+          {insights.recommendations.map((rec, index) => (
+            <View 
+              key={index} 
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: Colors.success + '10',
+                padding: 15,
+                borderRadius: 10,
+                marginBottom: 10,
+              }}
+            >
+              <Ionicons name="arrow-forward-circle" size={20} color={Colors.success} />
+              <Text style={{ flex: 1, marginLeft: 10, fontSize: 14, color: Colors.black }}>
+                {rec}
+              </Text>
+            </View>
+          ))}
         </View>
-      ))}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
-}
+} 
 
 export function SmartFilterRecommendations({ imageAnalysis, onSelectFilter, currentFilter }) {
   const [recommendations, setRecommendations] = useState([]);
@@ -422,6 +476,54 @@ replyText: {
 },
 insightsContainer: {
   flex: 1,
+},
+insightsSection: {
+  marginBottom: 20,
+},
+insightsSectionTitle: {
+  fontSize: 18,
+  fontWeight: 'bold',
+  marginBottom: 15,
+  color: Colors.black,
+},
+insightCard: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: Colors.primary + '10',
+  padding: 15,
+  borderRadius: 10,
+  marginBottom: 10,
+},
+insightText: {
+  flex: 1,
+  marginLeft: 10,
+  fontSize: 14,
+  color: Colors.black,
+},
+recommendationCard: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: Colors.success + '10',
+  padding: 15,
+  borderRadius: 10,
+  marginBottom: 10,
+},
+recommendationText: {
+  flex: 1,
+  marginLeft: 10,
+  fontSize: 14,
+  color: Colors.black,
+},
+loadingContainer: {
+  flex: 1,
+  justifyContent: 'center',
+  alignItems: 'center',
+  padding: 20,
+},
+loadingText: {
+  marginTop: 10,
+  fontSize: 16,
+  color: Colors.gray,
 },
 insightCard: {
   flexDirection: 'row',

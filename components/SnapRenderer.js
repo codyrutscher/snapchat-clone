@@ -1,4 +1,5 @@
 import React from 'react';
+import { Video } from 'expo-av';
 import { Image, Platform, StyleSheet, Text, View } from 'react-native';
 
 // Import the same filter, border, and background definitions
@@ -66,12 +67,24 @@ export default function SnapRenderer({ imageUrl, metadata, style, imageStyle, co
           ))}
         </View>
       )}
-      <View style={[styles.imageWrapper, getBorderStyle(), style]}>
-        <Image 
-          source={{ uri: imageUrl }} 
-          style={[styles.image, getFilterStyle(), imageStyle]}
-          resizeMode="contain"
-        />
+     <View style={[styles.imageWrapper, getBorderStyle(), style]}>
+        {metadata?.mediaType === 'video' ? (
+          <Video
+            source={{ uri: imageUrl }}
+            style={[styles.image, getFilterStyle(), imageStyle]}
+            shouldPlay
+            isLooping
+            resizeMode="contain"
+            isMuted={false}
+            volume={0.5}
+          />
+        ) : (
+          <Image 
+            source={{ uri: imageUrl }} 
+            style={[styles.image, getFilterStyle(), imageStyle]}
+            resizeMode="contain"
+          />
+        )}
       </View>
       
       {/* Text overlay */}

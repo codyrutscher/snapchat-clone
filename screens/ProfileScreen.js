@@ -147,7 +147,7 @@ export default function ProfileScreen({ navigation }) {
 
        
       </View>
-        {/* Friendship Insights Modal */}
+       {/* Friendship Insights Modal */}
 <Modal
   visible={showInsights}
   animationType="slide"
@@ -166,6 +166,13 @@ export default function ProfileScreen({ navigation }) {
     </View>
   </View>
 </Modal>
+<TouchableOpacity 
+  style={styles.menuItem}
+  onPress={() => navigation.navigate('Preferences')}
+>
+  <Ionicons name="settings-outline" size={24} color="#333" />
+  <Text style={styles.menuText}>My Preferences</Text>
+</TouchableOpacity>
 
       <TouchableOpacity 
         style={[styles.logoutButton, isLoggingOut && styles.logoutButtonDisabled]} 
@@ -252,6 +259,8 @@ insightsContent: {
   borderRadius: 20,
   padding: 20,
   maxHeight: '80%',
+  borderWidth: 1,  // Add this
+  borderColor: 'red',  // Add this to see the container
 },
 insightsHeader: {
   flexDirection: 'row',

@@ -226,77 +226,174 @@ class OpenAIService {
   // 5. Friendship Insights
   async analyzeFriendshipInsights() {
   try {
+    console.log('Starting friendship insights analysis...');
+    
     const friendData = await this.gatherFriendshipData();
     
-    // Generate insights based on actual data
-    const insights = [];
-    const recommendations = [];
-    
-    // Add insights based on data
-    if (friendData.totalFriends > 0) {
-      const activeRate = (friendData.activeFriends / friendData.totalFriends * 100).toFixed(0);
-      insights.push(`You're actively chatting with ${activeRate}% of your friends`);
-    }
-    
-    if (friendData.topInteractions.length > 0) {
-      const topFriend = friendData.topInteractions[0];
-      insights.push(`Your most active chat is with ${topFriend.name} (${topFriend.messageCount} messages)`);
-    }
-    
-    if (friendData.totalMessages > 0) {
-      insights.push(`You've exchanged ${friendData.totalMessages} messages recently`);
-    }
-    
-    // Add recommendations
-    if (friendData.inactiveFriends > 0) {
-      recommendations.push(`Reconnect with ${friendData.inactiveFriends} friends you haven't chatted with`);
-    }
-    
-    if (friendData.activeFriends < 3) {
-      recommendations.push("Start more conversations to build stronger connections");
-    }
-    
-    // If not enough data, use AI to generate additional insights
-    if (insights.length < 3 && this.openai) {
-      try {
-        const prompt = `Based on this chat data: ${JSON.stringify(friendData)}, provide 1-2 additional friendship insights. Keep each under 20 words.`;
-        
-        const completion = await this.openai.chat.completions.create({
-          model: "gpt-3.5-turbo",
-          messages: [
-            { role: "system", content: "Provide brief, positive friendship insights." },
-            { role: "user", content: prompt }
-          ],
-          temperature: 0.7,
-          max_tokens: 100
-        });
-        
-        const aiInsights = completion.choices[0].message.content
-          .split('\n')
-          .filter(line => line.trim())
-          .map(line => line.replace(/^\d+\.\s*/, '').trim());
-        
-        insights.push(...aiInsights.slice(0, 3 - insights.length));
-      } catch (error) {
-        console.log('AI insights generation failed, using defaults');
+    // Get user preferences
+    let userPreferences = {};
+    if (auth.currentUser) {
+      const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+      if (userDoc.exists()) {
+        userPreferences = userDoc.data().preferences || {};
       }
     }
     
-    // Return with fallbacks if needed
+    console.log('User preferences:', userPreferences);
+    
+    // Generate insights based on actual data and preferences
+    const insights = [];
+    const recommendations = [];
+    
+    // Basic activity insights
+    if (friendData.totalFriends > 0) {
+      if (friendData.activeFriends > 0) {
+        const activeRate = Math.round((friendData.activeFriends / friendData.totalFriends) * 100);
+        insights.push(`You're actively chatting with ${activeRate}% of your friends`);
+        
+        if (activeRate < 50) {
+          recommendations.push("Reach out to friends you haven't talked to recently");
+        }
+      } else {
+        insights.push("You haven't chatted with any friends yet");
+        recommendations.push("Start a conversation to connect with your friends");
+      }
+    }
+    
+    // Top interaction insight
+    if (friendData.topInteractions && friendData.topInteractions.length > 0) {
+      const topFriend = friendData.topInteractions[0];
+      insights.push(`Your most active chat is with ${topFriend.name} (${topFriend.messageCount} messages)`);
+      
+      if (friendData.topInteractions.length > 1) {
+        const secondFriend = friendData.topInteractions[1];
+        if (topFriend.messageCount > secondFriend.messageCount * 3) {
+          recommendations.push("Try balancing your conversations across more friends");
+        }
+      }
+    }
+    
+    // Message frequency insights based on preferences
+    if (userPreferences.messageFrequency) {
+      const avgMessagesPerFriend = friendData.activeFriends > 0 
+        ? Math.round(friendData.totalMessages / friendData.activeFriends)
+        : 0;
+      
+      if (userPreferences.messageFrequency === 'high' && avgMessagesPerFriend < 10) {
+        insights.push("You prefer frequent chats but have been quieter than usual");
+        recommendations.push("Try sending a quick hello to 3 friends today");
+      } else if (userPreferences.messageFrequency === 'low' && avgMessagesPerFriend > 20) {
+        insights.push("You're chatting more than your usual preference");
+        recommendations.push("It's okay to take breaks from messaging when you need to");
+      }
+    }
+    
+    // Time-based insights
+    if (userPreferences.bestTimeToChat && friendData.chatPatterns) {
+      const preferredTime = userPreferences.bestTimeToChat;
+      const actualPercentage = friendData.chatPatterns[preferredTime] || 0;
+      
+      if (actualPercentage > 0) {
+        insights.push(`${actualPercentage}% of your chats happen during your preferred ${preferredTime} time`);
+        
+        if (actualPercentage < 30) {
+          recommendations.push(`Try scheduling more chats in the ${preferredTime} when you're most comfortable`);
+        }
+      }
+    }
+    
+    // Personality-based insights
+    if (userPreferences.personality) {
+      if (userPreferences.personality === 'introvert') {
+        if (friendData.activeFriends > 5) {
+          insights.push("You're managing a large social circle well as an introvert!");
+          recommendations.push("Remember to take time for yourself between conversations");
+        }
+      } else if (userPreferences.personality === 'extrovert') {
+        if (friendData.activeFriends < 3) {
+          insights.push("As an extrovert, you might enjoy connecting with more friends");
+          recommendations.push("Join group chats or reach out to new friends");
+        }
+      }
+    }
+    
+    // Interest-based recommendations
+    if (userPreferences.interests && userPreferences.interests.length > 0) {
+      const randomInterest = userPreferences.interests[Math.floor(Math.random() * userPreferences.interests.length)];
+      recommendations.push(`Share something about ${randomInterest} with a friend today`);
+    }
+    
+    // Communication style recommendations
+    if (userPreferences.preferredChatStyle) {
+      switch (userPreferences.preferredChatStyle) {
+        case 'casual':
+          recommendations.push("Send a funny meme or emoji to brighten someone's day");
+          break;
+        case 'formal':
+          recommendations.push("Write a thoughtful message asking about someone's goals");
+          break;
+        case 'mixed':
+          recommendations.push("Mix it up with both casual jokes and deeper conversations");
+          break;
+      }
+    }
+    
+    // Social preference insights
+    if (userPreferences.likesGroupChats) {
+      recommendations.push("Create a group chat for friends with similar interests");
+    }
+    
+    if (userPreferences.prefersVideoChats) {
+      recommendations.push("Suggest a video call to catch up more personally");
+    }
+    
+    // Humor style recommendation
+    if (userPreferences.humor) {
+      switch (userPreferences.humor) {
+        case 'sarcastic':
+          recommendations.push("Share a witty observation about your day");
+          break;
+        case 'wholesome':
+          recommendations.push("Send an encouraging message to someone who might need it");
+          break;
+        case 'witty':
+          recommendations.push("Start a fun wordplay or pun conversation");
+          break;
+      }
+    }
+    
+    // Make sure we always have some insights
+    if (insights.length === 0) {
+      insights.push("Complete your preferences to get personalized insights");
+      insights.push("Start chatting to see your communication patterns");
+    }
+    
+    if (recommendations.length === 0) {
+      recommendations.push("Send a snap to connect with friends");
+      recommendations.push("Update your preferences for better recommendations");
+    }
+    
+    console.log('Generated insights:', insights);
+    console.log('Generated recommendations:', recommendations);
+    
     return {
-      insights: insights.length > 0 ? insights : [
-        "Start chatting to build your friendship network!",
-        "Send a snap to connect with friends",
-        "Your friends are waiting to hear from you"
-      ],
-      recommendations: recommendations.length > 0 ? recommendations : [
-        "Send a message to start a conversation",
-        "Share a story to engage with friends"
-      ]
+      insights: insights.slice(0, 5), // Limit to 5 insights
+      recommendations: recommendations.slice(0, 3), // Limit to 3 recommendations
+      preferences: userPreferences
     };
   } catch (error) {
     console.error('Error analyzing friendships:', error);
-    return this.fallbackFriendshipInsights();
+    return {
+      insights: [
+        "We're having trouble loading your insights",
+        "Try chatting with friends to generate data",
+        "Make sure your preferences are saved"
+      ],
+      recommendations: [
+        "Check your internet connection",
+        "Update your preferences in settings"
+      ]
+    };
   }
 }
 
@@ -334,10 +431,14 @@ class OpenAIService {
   try {
     if (!auth.currentUser) return {};
     
+    console.log('Gathering friendship data for:', auth.currentUser.uid);
+    
     // Get user's data
     const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
     const userData = userDoc.data() || {};
     const friendsCount = userData.friends?.length || 0;
+    
+    console.log('Total friends:', friendsCount);
     
     // Get user's chats
     const chatsQuery = query(
@@ -349,6 +450,14 @@ class OpenAIService {
     const chatActivity = {};
     const messageCount = {};
     let totalMessages = 0;
+    const chatPatterns = {
+      morning: 0,
+      afternoon: 0,
+      evening: 0,
+      night: 0
+    };
+    
+    console.log('Total chats found:', chatsSnapshot.size);
     
     // Analyze each chat
     for (const chatDoc of chatsSnapshot.docs) {
@@ -367,9 +476,20 @@ class OpenAIService {
           const messagesSnapshot = await getDocs(messagesQuery);
           const messages = messagesSnapshot.docs.map(doc => doc.data());
           
+          console.log(`Chat ${chatDoc.id} has ${messages.length} messages`);
+          
           // Count messages per friend
           messageCount[otherParticipant] = messages.length;
           totalMessages += messages.length;
+          
+          // Analyze message times
+          messages.forEach(msg => {
+            const hour = new Date(msg.timestamp).getHours();
+            if (hour >= 5 && hour < 12) chatPatterns.morning++;
+            else if (hour >= 12 && hour < 17) chatPatterns.afternoon++;
+            else if (hour >= 17 && hour < 22) chatPatterns.evening++;
+            else chatPatterns.night++;
+          });
           
           // Analyze last activity
           if (messages.length > 0) {
@@ -381,9 +501,17 @@ class OpenAIService {
             };
           }
         } catch (error) {
-          console.log('Error getting messages for chat:', chatDoc.id);
+          console.log('Error getting messages for chat:', chatDoc.id, error);
         }
       }
+    }
+    
+    // Calculate pattern percentages
+    const totalPatternMessages = Object.values(chatPatterns).reduce((a, b) => a + b, 0);
+    if (totalPatternMessages > 0) {
+      Object.keys(chatPatterns).forEach(time => {
+        chatPatterns[time] = Math.round((chatPatterns[time] / totalPatternMessages) * 100);
+      });
     }
     
     // Calculate insights data
@@ -392,7 +520,7 @@ class OpenAIService {
       .sort((a, b) => b[1].messageCount - a[1].messageCount)
       .slice(0, 3);
     
-    return {
+    const result = {
       totalFriends: friendsCount,
       activeFriends: activeFriends.length,
       totalMessages,
@@ -402,8 +530,13 @@ class OpenAIService {
         messageCount: data.messageCount,
         lastActivity: data.lastActivity
       })),
-      inactiveFriends: friendsCount - activeFriends.length
+      inactiveFriends: friendsCount - activeFriends.length,
+      chatPatterns
     };
+    
+    console.log('Friendship data gathered:', result);
+    
+    return result;
   } catch (error) {
     console.error('Error gathering friendship data:', error);
     return {
@@ -411,10 +544,12 @@ class OpenAIService {
       activeFriends: 0,
       totalMessages: 0,
       topInteractions: [],
-      inactiveFriends: 0
+      inactiveFriends: 0,
+      chatPatterns: {}
     };
   }
 }
+
   parseInsights(text) {
     const lines = text.split('\n').filter(line => line.trim());
     const insights = [];

@@ -1,21 +1,44 @@
 import { Ionicons } from '@expo/vector-icons';
 import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
-import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import { Colors } from '../constants/Colors';
 import { auth, db } from '../firebase';
 
 export default function ChatListScreen({ navigation }) {
   const [chats, setChats] = useState([]);
   const [friends, setFriends] = useState([]);
+  const [blockedUsers, setBlockedUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!auth.currentUser) return;
 
-    // Load friends first
-    loadFriends();
+    // Load user data including blocked users
+    loadUserData();
+  }, []);
 
-    // Load chats
+  const loadUserData = async () => {
+    try {
+      const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        const friendIds = userData.friends || [];
+        const blocked = userData.blockedUsers || [];
+        
+        setFriends(friendIds);
+        setBlockedUsers(blocked);
+        
+        // Load chats after we have blocked users list
+        loadChats(blocked);
+      }
+    } catch (error) {
+      console.error('Error loading user data:', error);
+      setLoading(false);
+    }
+  };
+
+  const loadChats = (blockedUsersList) => {
     const q = query(
       collection(db, 'chats'),
       where('participants', 'array-contains', auth.currentUser.uid)
@@ -24,7 +47,24 @@ export default function ChatListScreen({ navigation }) {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const chatList = [];
       snapshot.forEach((doc) => {
-        chatList.push({ id: doc.id, ...doc.data() });
+        const chatData = { id: doc.id, ...doc.data() };
+        
+        // Filter out chats with blocked users
+        if (chatData.type === 'group') {
+          // For group chats, check if any participant is blocked
+          const hasBlockedUser = chatData.participants.some(participantId => 
+            blockedUsersList.includes(participantId) && participantId !== auth.currentUser.uid
+          );
+          if (!hasBlockedUser) {
+            chatList.push(chatData);
+          }
+        } else {
+          // For direct chats, check if the other user is blocked
+          const otherUserId = chatData.participants.find(id => id !== auth.currentUser.uid);
+          if (!blockedUsersList.includes(otherUserId)) {
+            chatList.push(chatData);
+          }
+        }
       });
       
       // Sort by last message time
@@ -35,21 +75,10 @@ export default function ChatListScreen({ navigation }) {
       });
       
       setChats(chatList);
+      setLoading(false);
     });
 
     return unsubscribe;
-  }, []);
-
-  const loadFriends = async () => {
-    try {
-      const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
-      if (userDoc.exists()) {
-        const friendIds = userDoc.data().friends || [];
-        setFriends(friendIds);
-      }
-    } catch (error) {
-      console.error('Error loading friends:', error);
-    }
   };
 
   const getChatName = (chat) => {
@@ -94,14 +123,42 @@ export default function ChatListScreen({ navigation }) {
         <Text style={styles.lastMessage}>
           {item.lastMessage || 'Start a conversation'}
         </Text>
+        {item.lastMessageTime && (
+          <Text style={styles.messageTime}>
+            {formatMessageTime(item.lastMessageTime)}
+          </Text>
+        )}
       </View>
       <Ionicons name="chevron-forward" size={20} color={Colors.gray} />
     </TouchableOpacity>
   );
 
+  const formatMessageTime = (timestamp) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
+  };
+
   const navigateToAddFriends = () => {
     navigation.navigate('AddFriends');
   };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -155,6 +212,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   listContainer: {
     paddingVertical: 10,
   },
@@ -203,6 +265,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.gray,
     marginTop: 5,
+  },
+  messageTime: {
+    fontSize: 12,
+    color: Colors.gray,
+    marginTop: 2,
   },
   emptyContainer: {
     flex: 1,

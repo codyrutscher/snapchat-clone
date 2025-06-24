@@ -22,6 +22,8 @@ import ProfileScreen from './screens/ProfileScreen';
 import RegisterScreen from './screens/RegisterScreen';
 import SnapsScreen from './screens/SnapsScreen';
 import StoriesScreen from './screens/StoriesScreen';
+import DiscoverScreen from './screens/DiscoverScreen';
+import BlockedUsersScreen from './screens/BlockedUsersScreen';
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component {
@@ -112,6 +114,15 @@ function MainTabs() {
           headerShown: false,
         }}
       />
+      <Tab.Screen 
+  name="Discover" 
+  component={DiscoverScreen}
+  options={{
+    tabBarIcon: ({ color, size }) => (
+      <Ionicons name="compass-outline" size={size} color={color} />
+    ),
+  }}
+/>
       <Tab.Screen 
         name="Stories" 
         component={StoriesScreen}
@@ -251,6 +262,14 @@ function App() {
                 headerTintColor: Colors.white,
               }}
             />
+
+            <Stack.Screen 
+  name="BlockedUsers" 
+  component={BlockedUsersScreen} 
+  options={{ 
+    headerShown: false,
+  }}
+/>
             <Stack.Screen 
               name="AddFriends" 
               component={AddFriendsScreen} 

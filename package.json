@@ -9,6 +9,7 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@expo/metro-runtime": "~5.0.4",
     "@expo/vector-icons": "^14.1.0",
     "@react-native-async-storage/async-storage": "^2.1.2",
     "@react-navigation/bottom-tabs": "^6.5.11",
@@ -16,10 +17,12 @@
     "@react-navigation/stack": "^6.3.20",
     "deprecated-react-native-prop-types": "^4.1.0",
     "expo": "^53.0.0",
+    "expo-av": "~15.1.6",
     "expo-camera": "~16.1.8",
     "expo-constants": "~17.1.6",
     "expo-image-manipulator": "~13.1.7",
     "expo-image-picker": "~16.1.4",
+    "expo-location": "^18.1.5",
     "expo-media-library": "~17.1.7",
     "expo-status-bar": "~2.2.3",
     "firebase": "^10.7.0",
@@ -31,9 +34,7 @@
     "react-native-reanimated": "~3.17.4",
     "react-native-safe-area-context": "5.4.0",
     "react-native-screens": "~4.11.1",
-    "react-native-web": "^0.20.0",
-    "expo-av": "~15.1.6",
-    "@expo/metro-runtime": "~5.0.4"
+    "react-native-web": "^0.20.0"
   },
   "devDependencies": {
     "@babel/core": "^7.26.0"

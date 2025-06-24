@@ -2,11 +2,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
+import * as Location from 'expo-location';
 import { addDoc, collection, doc, getDoc } from 'firebase/firestore';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Video } from 'expo-av';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import {
     ActivityIndicator,
     Alert,
@@ -18,13 +19,17 @@ import {
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
-    View
+    View,
+    KeyboardAvoidingView
 } from 'react-native';
 import { Colors } from '../constants/Colors';
 import { auth, db, storage } from '../firebase';
 import { CaptionSuggestions } from '../components/AIAssistant';
 import OpenAIService from '../services/OpenAIService';
+import ContentModerationService from '../services/ContentModerationService';
+import TrendingService from '../services/TrendingService';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -56,16 +61,19 @@ const BACKGROUNDS = [
 export default function CameraScreen({ navigation }) {
   // Use the camera permissions hook
   const [permission, requestPermission] = useCameraPermissions();
+  const isFocused = useIsFocused();
   
   // Camera states
   const [cameraType, setCameraType] = useState('back');
   const [cameraReady, setCameraReady] = useState(false);
-  const [cameraInitializing, setCameraInitializing] = useState(true);
+  const [cameraInitializing, setCameraInitializing] = useState(false);
   const [cameraError, setCameraError] = useState(false);
+  const [showCamera, setShowCamera] = useState(true);
+  const [cameraKey, setCameraKey] = useState(0);
   
   // Media states
   const [capturedMedia, setCapturedMedia] = useState(null);
-  const [mediaType, setMediaType] = useState(null); // 'photo', 'video', or 'uploaded'
+  const [mediaType, setMediaType] = useState(null);
   
   // Editing states
   const [selectedBorder, setSelectedBorder] = useState('none');
@@ -82,38 +90,29 @@ export default function CameraScreen({ navigation }) {
   // Caption states
   const [snapText, setSnapText] = useState('');
   const [showAICaptions, setShowAICaptions] = useState(false);
+  const [captionText, setCaptionText] = useState('');
   
   const cameraRef = useRef(null);
 
-  useEffect(() => {
-    let isMounted = true;
-    
-    const setupCamera = async () => {
-      try {
-        if (!permission) {
-          console.log('Waiting for permissions...');
-          return;
-        }
-        
-        if (!permission.granted) {
-          console.log('Requesting camera permission...');
-          const result = await requestPermission();
-          if (!result.granted && isMounted) {
-            Alert.alert('Permission Required', 'Camera permission is required to use this feature.');
-            navigation.goBack();
-          }
-        }
-      } catch (error) {
-        console.error('Camera setup error:', error);
-        if (isMounted) {
-          Alert.alert('Camera Error', 'Failed to initialize camera. Please try again.');
-          navigation.goBack();
-        }
+  // Initialize camera when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      if (isFocused && !capturedMedia) {
+        console.log('Screen focused, initializing camera...');
+        initializeCamera();
       }
-    };
-    
-    setupCamera();
-    
+      
+      return () => {
+        console.log('Screen unfocused, cleaning up...');
+        if (!capturedMedia) {
+          setShowCamera(false);
+          setCameraReady(false);
+        }
+      };
+    }, [isFocused, capturedMedia])
+  );
+
+  useEffect(() => {
     // Load friends
     loadFriends();
     
@@ -121,39 +120,29 @@ export default function CameraScreen({ navigation }) {
     if (Platform.OS !== 'web') {
       MediaLibrary.requestPermissionsAsync();
     }
-    
-    return () => {
-      isMounted = false;
-      setCameraReady(false);
-    };
-  }, [permission, navigation]);
+  }, []);
 
-  // Handle navigation focus
-  useFocusEffect(
-    React.useCallback(() => {
-      let isActive = true;
+  const initializeCamera = async () => {
+    try {
+      console.log('Initializing camera...');
+      setCameraError(false);
+      setCameraInitializing(true);
+      setCameraReady(false);
       
-      const initializeCamera = async () => {
-        if (isActive && !capturedMedia) {
-          setCameraReady(false);
-          setCameraInitializing(true);
-          setCameraError(false);
-          // Reset camera state
-          await new Promise(resolve => setTimeout(resolve, CAMERA_INIT_DELAY));
-          if (isActive) {
-            setCameraInitializing(false);
-          }
-        }
-      };
+      // Force camera to remount by changing key
+      setCameraKey(prev => prev + 1);
       
-      initializeCamera();
+      // Small delay to ensure proper initialization
+      await new Promise(resolve => setTimeout(resolve, CAMERA_INIT_DELAY));
       
-      return () => {
-        isActive = false;
-        setCameraReady(false);
-      };
-    }, [capturedMedia])
-  );
+      setShowCamera(true);
+      setCameraInitializing(false);
+    } catch (error) {
+      console.error('Camera initialization error:', error);
+      setCameraError(true);
+      setCameraInitializing(false);
+    }
+  };
 
   const loadFriends = async () => {
     if (!auth.currentUser) return;
@@ -186,6 +175,7 @@ export default function CameraScreen({ navigation }) {
   const takePicture = async () => {
     if (!cameraRef.current || !cameraReady) {
       console.log('Camera not ready yet');
+      Alert.alert('Camera Not Ready', 'Please wait for the camera to initialize or press the refresh button.');
       return;
     }
     
@@ -194,7 +184,7 @@ export default function CameraScreen({ navigation }) {
       await new Promise(resolve => setTimeout(resolve, 100));
       
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.7,
+        quality: 0.3,
         base64: false,
       });
       setCapturedMedia(photo.uri);
@@ -202,7 +192,7 @@ export default function CameraScreen({ navigation }) {
       setShowEditOptions(true);
     } catch (error) {
       console.error('Error taking picture:', error);
-      Alert.alert('Error', 'Failed to take picture');
+      Alert.alert('Error', 'Failed to take picture. Please try reinitializing the camera.');
     }
   };
 
@@ -211,7 +201,7 @@ export default function CameraScreen({ navigation }) {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [9, 16],
-      quality: 0.7,
+      quality: 0.3,
     });
 
     if (!result.canceled) {
@@ -226,9 +216,9 @@ export default function CameraScreen({ navigation }) {
       mediaTypes: ImagePicker.MediaTypeOptions.Videos,
       allowsEditing: true,
       aspect: [9, 16],
-      quality: 0.5, // Reduced quality for smaller file size
-      videoExportPreset: ImagePicker.VideoExportPreset.MediumQuality, // Compress video
-      videoMaxDuration: 30, // 30 seconds max
+      quality: 0.3,
+      videoExportPreset: ImagePicker.VideoExportPreset.LowQuality,
+      videoMaxDuration: 15,
     });
 
     if (!result.canceled) {
@@ -253,17 +243,9 @@ export default function CameraScreen({ navigation }) {
     setSendAsStory(false);
     setSnapText('');
     setShowAICaptions(false);
-    setCameraError(false);
-    setCameraInitializing(false);
-  };
-
-  const retryCamera = () => {
-    setCameraError(false);
-    setCameraInitializing(true);
-    setCameraReady(false);
-    // Force re-render of camera
-    setCameraType(current => current === 'back' ? 'front' : 'back');
-    setTimeout(() => setCameraType('back'), 100);
+    setCaptionText('');
+    // Reinitialize camera when going back
+    initializeCamera();
   };
 
   const saveSnap = async () => {
@@ -277,39 +259,32 @@ export default function CameraScreen({ navigation }) {
     setUploading(true);
     
     try {
-      let mediaUri = capturedMedia;
-      
-      // Compress video if it's a video
-      if (mediaType === 'video') {
-        try {
-          // For videos, we'll use ImageManipulator to create a thumbnail
-          // and store video URL directly (Firebase will handle streaming)
-          console.log('Processing video for upload...');
-        } catch (error) {
-          console.log('Video processing error:', error);
+      // Moderate caption if present
+      if (snapText) {
+        const moderationResult = await ContentModerationService.moderateText(snapText);
+        if (moderationResult.flagged) {
+          Alert.alert('Content Blocked', `Your caption was blocked: ${moderationResult.reason}`);
+          setUploading(false);
+          return;
         }
       }
-      
-      // Upload media to Firebase Storage
-      const response = await fetch(mediaUri);
-      const blob = await response.blob();
-      
-      // Check file size
-      const sizeInMB = blob.size / (1024 * 1024);
-      console.log(`File size: ${sizeInMB.toFixed(2)} MB`);
-      
-      if (sizeInMB > 100) { // 100MB limit for Firebase
-        Alert.alert('Error', 'File is too large. For videos, please select a shorter clip.');
-        setUploading(false);
-        return;
-      }
-      
-      const filename = `snaps/${auth.currentUser.uid}/${Date.now()}.${mediaType === 'video' ? 'mp4' : 'jpg'}`;
-      const storageRef = ref(storage, filename);
-      
-      await uploadBytes(storageRef, blob);
-      const downloadURL = await getDownloadURL(storageRef);
 
+      // Get location if permission granted
+      let location = null;
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const currentLocation = await Location.getCurrentPositionAsync({});
+          location = {
+            latitude: currentLocation.coords.latitude,
+            longitude: currentLocation.coords.longitude
+          };
+        }
+      } catch (error) {
+        console.log('Location error:', error);
+      }
+
+      // Prepare all data first
       const snapMetadata = {
         border: selectedBorder,
         background: selectedBackground,
@@ -317,43 +292,85 @@ export default function CameraScreen({ navigation }) {
         text: snapText
       };
 
-      const promises = [];
+      const timestamp = new Date().toISOString();
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      
+      // Upload media in background while preparing database entries
+      const uploadPromise = (async () => {
+        const response = await fetch(capturedMedia);
+        const blob = await response.blob();
+        
+        const filename = `snaps/${auth.currentUser.uid}/${Date.now()}.${mediaType === 'video' ? 'mp4' : 'jpg'}`;
+        const storageRef = ref(storage, filename);
+        
+        await uploadBytes(storageRef, blob);
+        return await getDownloadURL(storageRef);
+      })();
 
+      // Prepare all database entries while upload is happening
+      const dbEntries = [];
+      
       if (sendAsStory) {
-        const storyData = {
-          userId: auth.currentUser.uid,
-          username: auth.currentUser.displayName || 'Anonymous',
-          imageUrl: downloadURL,
-          timestamp: new Date().toISOString(),
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-          type: 'story',
-          metadata: snapMetadata
-        };
-        promises.push(addDoc(collection(db, 'snaps'), storyData));
-      }
+  dbEntries.push({
+    userId: auth.currentUser.uid,
+    username: auth.currentUser.displayName || 'Anonymous',
+    timestamp: timestamp,
+    expiresAt: expiresAt,
+    type: 'story',
+    metadata: snapMetadata,
+    location: location,
+    // Add these fields for trending
+    views: 0,
+    likes: 0,
+    shares: 0,
+    public: true // Make stories public for discovery
+  });
+}
 
       selectedFriends.forEach(friendId => {
-        const snapData = {
+        dbEntries.push({
           userId: auth.currentUser.uid,
           username: auth.currentUser.displayName || 'Anonymous',
           recipientId: friendId,
-          imageUrl: downloadURL,
-          timestamp: new Date().toISOString(),
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          timestamp: timestamp,
+          expiresAt: expiresAt,
           type: 'direct',
           viewed: false,
-          metadata: snapMetadata
-        };
-        promises.push(addDoc(collection(db, 'snaps'), snapData));
+          metadata: snapMetadata,
+          location: location
+        });
       });
 
-      await Promise.all(promises);
-      Alert.alert('Success', 'Snap sent!');
+      // Wait for upload to complete
+      const downloadURL = await uploadPromise;
+
+      // Add imageUrl to all entries and save to database in parallel
+      const savePromises = dbEntries.map(entry => 
+        addDoc(collection(db, 'snaps'), { ...entry, imageUrl: downloadURL })
+      );
+
+      await Promise.all(savePromises);
+      
+      // Track user behavior for story posts
+      if (sendAsStory) {
+        await TrendingService.trackUserBehavior('post_story', {
+          mediaType: mediaType,
+          hasCaption: !!snapText,
+          hasLocation: !!location
+        });
+      }
+      
+      // Don't wait for alert, just reset immediately
       resetCamera();
+      
+      // Show success in background
+      setTimeout(() => {
+        Alert.alert('Success', 'Snap sent!');
+      }, 100);
+      
     } catch (error) {
       console.error('Upload error:', error);
       Alert.alert('Error', 'Failed to send snap: ' + error.message);
-    } finally {
       setUploading(false);
     }
   };
@@ -379,7 +396,6 @@ export default function CameraScreen({ navigation }) {
 
   // Permission handling
   if (!permission) {
-    // Camera permissions are still loading
     return (
       <View style={styles.container}>
         <ActivityIndicator size="large" color={Colors.primary} />
@@ -388,7 +404,6 @@ export default function CameraScreen({ navigation }) {
   }
 
   if (!permission.granted) {
-    // Camera permissions are not granted yet
     return (
       <View style={styles.container}>
         <Text style={styles.text}>We need your permission to show the camera</Text>
@@ -402,7 +417,10 @@ export default function CameraScreen({ navigation }) {
   // Edit screen
   if (capturedMedia && showEditOptions) {
     return (
-      <View style={styles.editContainer}>
+      <KeyboardAvoidingView 
+        style={styles.editContainer}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
         <View style={[styles.previewContainer, getBackgroundStyle()]}>
           <View style={[styles.mediaWrapper, getBorderStyle()]}>
             {mediaType === 'video' ? (
@@ -419,6 +437,13 @@ export default function CameraScreen({ navigation }) {
               <Image source={{ uri: capturedMedia }} style={styles.previewImage} />
             )}
           </View>
+          
+          {/* Caption overlay */}
+          {captionText && (
+            <View style={styles.captionOverlay}>
+              <Text style={styles.captionText}>{captionText}</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.editControls}>
@@ -429,6 +454,7 @@ export default function CameraScreen({ navigation }) {
           <TouchableOpacity 
             style={styles.nextButton}
             onPress={() => {
+              setSnapText(captionText); // Save caption to snapText
               setShowEditOptions(false);
               setShowFriendsList(true);
             }}
@@ -438,6 +464,47 @@ export default function CameraScreen({ navigation }) {
         </View>
 
         <View style={styles.optionsContainer}>
+          {/* Caption Section */}
+          <View style={styles.captionSection}>
+            <Text style={styles.optionTitle}>Caption</Text>
+            
+            {/* Manual caption input */}
+            <View style={styles.captionInputContainer}>
+              <TextInput
+                style={styles.captionInput}
+                placeholder="Add a caption..."
+                value={captionText}
+                onChangeText={setCaptionText}
+                multiline
+                maxLength={100}
+              />
+              {captionText.length > 0 && (
+                <TouchableOpacity 
+                  style={styles.clearCaptionButton}
+                  onPress={() => setCaptionText('')}
+                >
+                  <Ionicons name="close-circle" size={20} color={Colors.gray} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* AI Caption Suggestions */}
+            <CaptionSuggestions
+              imageContext={{
+                filter: selectedBorder,
+                background: selectedBackground,
+                border: selectedBorder,
+                time: new Date().getHours(),
+                mood: 'casual',
+                mediaType: mediaType
+              }}
+              onSelect={(caption) => {
+                setCaptionText(caption);
+                OpenAIService.updateContentFeedback('caption', { used: true, caption });
+              }}
+            />
+          </View>
+
           <View style={styles.optionsSection}>
             <Text style={styles.optionTitle}>Borders</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -470,7 +537,7 @@ export default function CameraScreen({ navigation }) {
             </ScrollView>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     );
   }
 
@@ -508,24 +575,6 @@ export default function CameraScreen({ navigation }) {
             {sendAsStory && <Ionicons name="checkmark" size={24} color={Colors.primary} />}
           </TouchableOpacity>
 
-          {/* Add AI Caption Suggestions */}
-          <CaptionSuggestions
-            imageContext={{
-              filter: selectedBorder,
-              background: selectedBackground,
-              border: selectedBorder,
-              time: new Date().getHours(),
-              mood: 'casual',
-              mediaType: mediaType,
-              recipientName: friends.find(f => selectedFriends.includes(f.id))?.displayName || null
-            }}
-            onSelect={(caption) => {
-              setSnapText(caption);
-              setShowAICaptions(false);
-              OpenAIService.updateContentFeedback('caption', { used: true, caption });
-            }}
-          />
-
           <Text style={styles.friendsTitle}>Friends</Text>
           <FlatList
             data={friends}
@@ -554,40 +603,74 @@ export default function CameraScreen({ navigation }) {
   // Camera screen
   return (
     <View style={styles.container}>
-      {cameraError ? (
+      {(cameraError || !showCamera) ? (
         <View style={styles.errorContainer}>
           <Ionicons name="camera-off" size={60} color="white" />
-          <Text style={styles.errorText}>Camera failed to load</Text>
+          <Text style={styles.errorText}>
+            {cameraError ? 'Camera failed to load' : 'Camera needs initialization'}
+          </Text>
           <TouchableOpacity 
-            style={styles.retryButton}
-            onPress={retryCamera}
+            style={styles.initButton}
+            onPress={initializeCamera}
+            disabled={cameraInitializing}
           >
-            <Text style={styles.retryText}>Retry</Text>
+            {cameraInitializing ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : (
+              <>
+                <Ionicons name="refresh" size={24} color="white" />
+                <Text style={styles.initButtonText}>Initialize Camera</Text>
+              </>
+            )}
           </TouchableOpacity>
+          
+          <View style={styles.alternativeOptions}>
+            <Text style={styles.orText}>Or use:</Text>
+            <View style={styles.alternativeButtons}>
+              <TouchableOpacity style={styles.altButton} onPress={pickImage}>
+                <Ionicons name="images" size={30} color="white" />
+                <Text style={styles.altButtonText}>Gallery</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.altButton} onPress={pickVideo}>
+                <Ionicons name="videocam" size={30} color="white" />
+                <Text style={styles.altButtonText}>Video</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       ) : (
         <>
-          <CameraView 
-            style={styles.camera} 
-            facing={cameraType}
-            ref={cameraRef}
-            onCameraReady={() => {
-              console.log('Camera is ready');
-              setCameraReady(true);
-              setCameraInitializing(false);
-            }}
-            onMountError={(error) => {
-              console.error('Camera mount error:', error);
-              setCameraError(true);
-              setCameraInitializing(false);
-            }}
-          >
-            <View style={styles.cameraControls}>
-              <TouchableOpacity style={styles.flipButton} onPress={flipCamera}>
-                <Ionicons name="camera-reverse" size={30} color="white" />
-              </TouchableOpacity>
-            </View>
-          </CameraView>
+          {showCamera && (
+            <CameraView 
+              key={cameraKey}
+              style={styles.camera} 
+              facing={cameraType}
+              ref={cameraRef}
+              onCameraReady={() => {
+                console.log('Camera is ready');
+                setCameraReady(true);
+                setCameraInitializing(false);
+              }}
+              onMountError={(error) => {
+                console.error('Camera mount error:', error);
+                setCameraError(true);
+                setCameraInitializing(false);
+              }}
+            >
+              <View style={styles.cameraControls}>
+                <TouchableOpacity style={styles.flipButton} onPress={flipCamera}>
+                  <Ionicons name="camera-reverse" size={30} color="white" />
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.refreshButton} 
+                  onPress={initializeCamera}
+                  disabled={cameraInitializing}
+                >
+                  <Ionicons name="refresh" size={24} color="white" />
+                </TouchableOpacity>
+              </View>
+            </CameraView>
+          )}
 
           {cameraInitializing && (
             <View style={styles.loadingOverlay}>
@@ -614,7 +697,9 @@ export default function CameraScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.hint}>Tap center for photo • Use icons for gallery/video</Text>
+          <Text style={styles.hint}>
+            {cameraReady ? 'Tap center for photo • Use icons for gallery/video' : 'Waiting for camera...'}
+          </Text>
         </>
       )}
     </View>
@@ -639,6 +724,12 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   flipButton: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 25,
+    padding: 10,
+    marginBottom: 10,
+  },
+  refreshButton: {
     backgroundColor: 'rgba(0,0,0,0.5)',
     borderRadius: 25,
     padding: 10,
@@ -718,22 +809,50 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'black',
+    padding: 20,
   },
   errorText: {
     color: 'white',
     fontSize: 18,
     marginVertical: 20,
+    textAlign: 'center',
   },
-  retryButton: {
+  initButton: {
     backgroundColor: Colors.primary,
     paddingHorizontal: 30,
-    paddingVertical: 12,
+    paddingVertical: 15,
     borderRadius: 25,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
-  retryText: {
+  initButtonText: {
     color: 'white',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  alternativeOptions: {
+    marginTop: 40,
+    alignItems: 'center',
+  },
+  orText: {
+    color: 'white',
+    fontSize: 16,
+    marginBottom: 20,
+    opacity: 0.7,
+  },
+  alternativeButtons: {
+    flexDirection: 'row',
+    gap: 30,
+  },
+  altButton: {
+    alignItems: 'center',
+    padding: 15,
+  },
+  altButtonText: {
+    color: 'white',
+    marginTop: 5,
+    fontSize: 14,
   },
   
   // Edit screen styles
@@ -745,7 +864,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingBottom: 200, // Make room for options
+    paddingBottom: 200,
   },
   mediaWrapper: {
     width: '85%',
@@ -827,6 +946,49 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  
+  // Caption styles
+  captionSection: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  captionInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: 25,
+    paddingHorizontal: 15,
+    marginBottom: 10,
+  },
+  captionInput: {
+    flex: 1,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: Colors.black,
+  },
+  clearCaptionButton: {
+    padding: 5,
+  },
+  captionOverlay: {
+    position: 'absolute',
+    bottom: 50,
+    left: 20,
+    right: 20,
+    alignItems: 'center',
+  },
+  captionText: {
+    color: 'white',
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
   },
   
   // Send modal styles

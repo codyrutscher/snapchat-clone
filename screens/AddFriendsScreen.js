@@ -38,6 +38,7 @@ export default function AddFriendsScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [sendingRequest, setSendingRequest] = useState(false);
   const [currentUsername, setCurrentUsername] = useState('');
+  const [blockedUsers, setBlockedUsers] = useState([]);
 
   useEffect(() => {
     const unsubscribe = loadUserData();
@@ -69,6 +70,9 @@ export default function AddFriendsScreen({ navigation }) {
             setFriends(userData.friends);
           }
           
+          // Load blocked users
+          setBlockedUsers(userData.blockedUsers || []);
+          
           setCurrentUsername(userData.username || userData.displayName || auth.currentUser.email.split('@')[0]);
         } else {
           console.error('User document does not exist!');
@@ -77,6 +81,7 @@ export default function AddFriendsScreen({ navigation }) {
             username: auth.currentUser.email.split('@')[0],
             email: auth.currentUser.email,
             friends: [],
+            blockedUsers: [],
             createdAt: new Date().toISOString(),
             userId: auth.currentUser.uid
           });
@@ -95,7 +100,11 @@ export default function AddFriendsScreen({ navigation }) {
       const requestsUnsubscribe = onSnapshot(requestsQuery, (snapshot) => {
         const requests = [];
         snapshot.forEach((doc) => {
-          requests.push({ id: doc.id, ...doc.data() });
+          const data = doc.data();
+          // Filter out requests from blocked users
+          if (!blockedUsers.includes(data.from)) {
+            requests.push({ id: doc.id, ...data });
+          }
         });
         setFriendRequests(requests);
         console.log('Friend requests updated:', requests.length);
@@ -148,22 +157,31 @@ export default function AddFriendsScreen({ navigation }) {
       const snapshot = await getDocs(usersRef);
       
       const results = [];
-      snapshot.forEach((doc) => {
-        const userData = doc.data();
+      for (const docSnapshot of snapshot.docs) {
+        const userData = docSnapshot.data();
         console.log('Checking user:', userData.username, 'against:', searchTerm);
         
         // Skip current user
-        if (doc.id === auth.currentUser.uid) return;
+        if (docSnapshot.id === auth.currentUser.uid) continue;
+        
+        // Skip blocked users
+        if (blockedUsers.includes(docSnapshot.id)) continue;
+        
+        // Check if user allows being found by username
+        if (userData.privacySettings?.allowSearchByUsername === false) {
+          console.log('User has disabled username search:', userData.username);
+          continue;
+        }
         
         // Check if username contains search term
         if (userData.username && userData.username.toLowerCase().includes(searchTerm)) {
           results.push({ 
-            id: doc.id, 
+            id: docSnapshot.id, 
             ...userData,
             displayUsername: userData.displayName || userData.username 
           });
         }
-      });
+      }
       
       console.log('Search results:', results);
       setSearchResults(results);
@@ -352,7 +370,11 @@ export default function AddFriendsScreen({ navigation }) {
     return (
       <View style={styles.userItem}>
         <View style={styles.userInfo}>
-          <Ionicons name="person-circle" size={40} color={Colors.primary} />
+          {item.profilePicture ? (
+            <Image source={{ uri: item.profilePicture }} style={styles.profilePic} />
+          ) : (
+            <Ionicons name="person-circle" size={40} color={Colors.primary} />
+          )}
           <View style={styles.userText}>
             <Text style={styles.username}>{item.displayUsername || item.username}</Text>
             <Text style={styles.email}>{item.email}</Text>
@@ -594,6 +616,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+  },
+  profilePic: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 10,
   },
   userText: {
     marginLeft: 10,

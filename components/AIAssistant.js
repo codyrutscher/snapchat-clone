@@ -6,7 +6,8 @@ import {
   ScrollView,
   StyleSheet,
   ActivityIndicator,
-  Modal
+  Modal,
+  Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import OpenAIService from '../services/OpenAIService';
@@ -237,8 +238,6 @@ export function BestTimeIndicator() {
   );
 }
 
-// Continue in next part...
-
 export function SmartReplyBar({ snapContext, onSelectReply }) {
   const [replies, setReplies] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -289,10 +288,10 @@ export function FriendshipInsights() {
   }, []);
 
   const loadInsights = async () => {
-    console.log('Loading friendship insights...');
+    console.log('Loading developer friendship insights...');
     try {
       const data = await OpenAIService.analyzeFriendshipInsights();
-      console.log('Insights received:', data);
+      console.log('Developer insights received:', data);
       setInsights(data);
     } catch (error) {
       console.error('Error loading insights:', error);
@@ -309,8 +308,8 @@ export function FriendshipInsights() {
     return (
       <View style={{ padding: 20, alignItems: 'center' }}>
         <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={{ marginTop: 10, fontSize: 16, color: Colors.gray }}>
-          Analyzing your friendships...
+        <Text style={{ marginTop: 10, fontSize: 16, color: Colors.text }}>
+          Analyzing your developer network...
         </Text>
       </View>
     );
@@ -319,7 +318,7 @@ export function FriendshipInsights() {
   if (!insights || !insights.insights) {
     return (
       <View style={{ padding: 20, alignItems: 'center' }}>
-        <Text style={{ fontSize: 16, color: Colors.gray }}>
+        <Text style={{ fontSize: 16, color: Colors.text }}>
           No insights available
         </Text>
       </View>
@@ -329,24 +328,39 @@ export function FriendshipInsights() {
   return (
     <View style={{ flex: 1 }}>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }}>
-        <View style={{ marginBottom: 20 }}>
-          <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 15, color: Colors.black }}>
-            Your Insights
+        <View style={{ marginBottom: 25 }}>
+          <Text style={{ 
+            fontSize: 20,
+            fontWeight: 'bold', 
+            marginBottom: 20,
+            color: Colors.primary,
+            fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace'
+          }}>
+            Developer Insights
           </Text>
           {insights.insights.map((insight, index) => (
             <View 
               key={index} 
               style={{
                 flexDirection: 'row',
-                alignItems: 'center',
+                alignItems: 'flex-start',
                 backgroundColor: Colors.primary + '10',
-                padding: 15,
-                borderRadius: 10,
-                marginBottom: 10,
+                padding: 18,
+                borderRadius: 12,
+                marginBottom: 12,
+                borderWidth: 1,
+                borderColor: Colors.primary + '30',
               }}
             >
-              <Ionicons name="bulb-outline" size={20} color={Colors.primary} />
-              <Text style={{ flex: 1, marginLeft: 10, fontSize: 14, color: Colors.black }}>
+              <Ionicons name="code-slash" size={24} color={Colors.primary} />
+              <Text style={{ 
+                flex: 1, 
+                marginLeft: 12,
+                fontSize: 16,
+                color: Colors.text,
+                lineHeight: 22,
+                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace'
+              }}>
                 {insight}
               </Text>
             </View>
@@ -354,7 +368,13 @@ export function FriendshipInsights() {
         </View>
         
         <View>
-          <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 15, color: Colors.black }}>
+          <Text style={{ 
+            fontSize: 20,
+            fontWeight: 'bold', 
+            marginBottom: 20,
+            color: Colors.primary,
+            fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace'
+          }}>
             Recommendations
           </Text>
           {insights.recommendations.map((rec, index) => (
@@ -362,15 +382,24 @@ export function FriendshipInsights() {
               key={index} 
               style={{
                 flexDirection: 'row',
-                alignItems: 'center',
+                alignItems: 'flex-start',
                 backgroundColor: Colors.success + '10',
-                padding: 15,
-                borderRadius: 10,
-                marginBottom: 10,
+                padding: 18,
+                borderRadius: 12,
+                marginBottom: 12,
+                borderWidth: 1,
+                borderColor: Colors.success + '30',
               }}
             >
-              <Ionicons name="arrow-forward-circle" size={20} color={Colors.success} />
-              <Text style={{ flex: 1, marginLeft: 10, fontSize: 14, color: Colors.black }}>
+              <Ionicons name="rocket" size={24} color={Colors.success} />
+              <Text style={{ 
+                flex: 1, 
+                marginLeft: 12,
+                fontSize: 16,
+                color: Colors.text,
+                lineHeight: 22,
+                fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace'
+              }}>
                 {rec}
               </Text>
             </View>
@@ -414,9 +443,11 @@ export function SmartFilterRecommendations({ imageAnalysis, onSelectFilter, curr
           <View style={styles.filterPreview} />
           <Text style={styles.filterName}>{rec.filter}</Text>
           <Text style={styles.filterReason}>{rec.reason}</Text>
-          {index === 0 && <View style={styles.aiRecommendedBadge}>
-            <Text style={styles.aiBadgeText}>AI Pick</Text>
-          </View>}
+          {index === 0 && (
+            <View style={styles.aiRecommendedBadge}>
+              <Text style={styles.aiBadgeText}>AI Pick</Text>
+            </View>
+          )}
         </TouchableOpacity>
       ))}
     </>
@@ -426,20 +457,22 @@ export function SmartFilterRecommendations({ imageAnalysis, onSelectFilter, curr
 const styles = StyleSheet.create({
   container: {
     padding: 10,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.surface,
     borderRadius: 10,
     marginVertical: 5,
   },
   title: {
     fontSize: 14,
     fontWeight: 'bold',
-    color: Colors.black,
+    color: Colors.text,
     marginBottom: 10,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   loadingText: {
     fontSize: 12,
-    color: Colors.gray,
+    color: Colors.textSecondary,
     marginLeft: 10,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   captionChip: {
     backgroundColor: Colors.primary + '20',
@@ -453,6 +486,7 @@ const styles = StyleSheet.create({
   captionText: {
     color: Colors.primary,
     fontSize: 14,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   refreshButton: {
     position: 'absolute',
@@ -461,7 +495,7 @@ const styles = StyleSheet.create({
     padding: 5,
   },
   recommendationsContainer: {
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.surface,
     padding: 15,
     marginVertical: 10,
     marginHorizontal: 10,
@@ -477,6 +511,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: Colors.primary,
     marginBottom: 10,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   recommendationCard: {
     flexDirection: 'row',
@@ -491,12 +526,14 @@ const styles = StyleSheet.create({
   recommendationName: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: Colors.black,
+    color: Colors.text,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   recommendationReason: {
     fontSize: 14,
-    color: Colors.gray,
+    color: Colors.textSecondary,
     marginTop: 2,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   interestsRow: {
     flexDirection: 'row',
@@ -514,6 +551,7 @@ const styles = StyleSheet.create({
   interestText: {
     fontSize: 12,
     color: Colors.primary,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   ideaButton: {
     flexDirection: 'row',
@@ -521,13 +559,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     paddingHorizontal: 20,
     paddingVertical: 12,
-    borderRadius: 25,
+    borderRadius: 10,
     marginVertical: 10,
   },
   ideaButtonText: {
-    color: Colors.white,
+    color: Colors.background,
     marginLeft: 10,
     fontWeight: 'bold',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   modalContainer: {
     flex: 1,
@@ -535,7 +574,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingTop: 20,
@@ -552,7 +591,8 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: Colors.black,
+    color: Colors.text,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   loadingContainer: {
     padding: 50,
@@ -570,15 +610,16 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.lightGray,
   },
   replyBar: {
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: 'rgba(15,15,30,0.95)',
     padding: 15,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
   },
   replyTitle: {
     fontSize: 12,
-    color: Colors.gray,
+    color: Colors.textSecondary,
     marginBottom: 10,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   replyChip: {
     backgroundColor: Colors.primary,
@@ -588,8 +629,9 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   replyText: {
-    color: 'white',
+    color: Colors.background,
     fontWeight: 'bold',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   filterOption: {
     alignItems: 'center',
@@ -604,18 +646,21 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 10,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: Colors.lightGray,
     marginBottom: 5,
   },
   filterName: {
     fontSize: 14,
     fontWeight: 'bold',
+    color: Colors.text,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   filterReason: {
     fontSize: 10,
-    color: Colors.gray,
+    color: Colors.textSecondary,
     textAlign: 'center',
     marginTop: 2,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   aiRecommendedBadge: {
     position: 'absolute',
@@ -627,39 +672,43 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   aiBadgeText: {
-    color: 'white',
+    color: Colors.background,
     fontSize: 10,
     fontWeight: 'bold',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   ideaText: {
     fontSize: 16,
-    color: Colors.black,
+    color: Colors.text,
     flex: 1,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   refreshIdeasButton: {
     backgroundColor: Colors.primary,
     marginHorizontal: 20,
     marginTop: 20,
     paddingVertical: 12,
-    borderRadius: 25,
+    borderRadius: 10,
     alignItems: 'center',
   },
   refreshText: {
-    color: Colors.white,
+    color: Colors.background,
     fontWeight: 'bold',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   timeIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 10,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.surface,
     borderRadius: 20,
     marginVertical: 5,
   },
   timeText: {
     marginLeft: 5,
     fontSize: 14,
-    color: Colors.gray,
+    color: Colors.textSecondary,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   goodTimeText: {
     color: Colors.success,

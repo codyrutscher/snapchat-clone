@@ -10,7 +10,8 @@ import {
   TouchableOpacity,
   View,
   Switch,
-  ActivityIndicator
+  ActivityIndicator,
+  Platform
 } from 'react-native';
 import { Colors } from '../constants/Colors';
 import { auth, db } from '../firebase';
@@ -19,27 +20,49 @@ export default function PreferencesScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [preferences, setPreferences] = useState({
-    // Communication preferences
-    preferredChatStyle: 'casual', // casual, formal, mixed
-    messageFrequency: 'moderate', // low, moderate, high
-    bestTimeToChat: 'evening', // morning, afternoon, evening, night
+    // Developer communication preferences
+    codeReviewStyle: 'thorough', // thorough, quick, balanced
+    debuggingApproach: 'systematic', // systematic, intuitive, collaborative
+    documentationLevel: 'detailed', // minimal, moderate, detailed
     
-    // Interests
-    interests: [],
-    currentInterest: '',
+    // Tech stack
+    primaryLanguages: [],
+    currentLanguage: '',
+    frameworks: [],
+    currentFramework: '',
+    databases: [],
+    currentDatabase: '',
     
-    // Social preferences
-    likesGroupChats: false,
-    prefersVideoChats: false,
-    likesVoiceMessages: false,
+    // Collaboration preferences
+    pairProgramming: true,
+    codeReviews: true,
+    openSource: true,
+    mentoring: false,
     
-    // Personality traits
-    personality: 'balanced', // introvert, extrovert, balanced
-    humor: 'witty', // sarcastic, witty, wholesome, mixed
+    // Work style
+    workSchedule: 'night-owl', // early-bird, nine-to-five, night-owl, flexible
+    timezone: 'PST',
+    remoteWork: true,
     
-    // Goals
-    friendshipGoals: '',
-    socialGoals: '',
+    // Learning interests
+    learningGoals: [],
+    currentLearningGoal: '',
+    experienceLevel: 'senior', // junior, mid, senior, principal
+    
+    // Project preferences
+    projectTypes: 'fullstack', // frontend, backend, fullstack, mobile, devops
+    teamSize: 'small', // solo, small, medium, large
+    
+    // Communication
+    preferredIDE: 'vscode',
+    gitWorkflow: 'feature-branch',
+    favoriteDevJoke: '',
+    
+    // Developer personality
+    debuggingStyle: 'rubber-duck',
+    caffeineDependency: 'high',
+    tabsVsSpaces: 'spaces',
+    darkMode: true,
   });
 
   useEffect(() => {
@@ -66,7 +89,7 @@ export default function PreferencesScreen({ navigation }) {
         preferences: preferences
       }, { merge: true });
       
-      Alert.alert('Success', 'Your preferences have been saved!');
+      Alert.alert('Success', 'Your developer preferences have been saved!');
       navigation.goBack();
     } catch (error) {
       console.error('Error saving preferences:', error);
@@ -76,19 +99,20 @@ export default function PreferencesScreen({ navigation }) {
     }
   };
 
-  const addInterest = () => {
-    if (preferences.currentInterest.trim()) {
+  const addItem = (field, currentField) => {
+    const currentValue = preferences[currentField];
+    if (currentValue.trim()) {
       setPreferences({
         ...preferences,
-        interests: [...preferences.interests, preferences.currentInterest.trim()],
-        currentInterest: ''
+        [field]: [...preferences[field], currentValue.trim()],
+        [currentField]: ''
       });
     }
   };
 
-  const removeInterest = (index) => {
-    const newInterests = preferences.interests.filter((_, i) => i !== index);
-    setPreferences({ ...preferences, interests: newInterests });
+  const removeItem = (field, index) => {
+    const newItems = preferences[field].filter((_, i) => i !== index);
+    setPreferences({ ...preferences, [field]: newItems });
   };
 
   if (loading) {
@@ -102,92 +126,60 @@ export default function PreferencesScreen({ navigation }) {
   return (
     <ScrollView style={styles.container}>
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Communication Style</Text>
+        <Text style={styles.sectionTitle}>💻 Tech Stack</Text>
         
-        <Text style={styles.label}>Preferred Chat Style</Text>
-        <View style={styles.optionRow}>
-          {['casual', 'formal', 'mixed'].map((style) => (
-            <TouchableOpacity
-              key={style}
-              style={[
-                styles.optionButton,
-                preferences.preferredChatStyle === style && styles.selectedOption
-              ]}
-              onPress={() => setPreferences({ ...preferences, preferredChatStyle: style })}
-            >
-              <Text style={[
-                styles.optionText,
-                preferences.preferredChatStyle === style && styles.selectedText
-              ]}>
-                {style.charAt(0).toUpperCase() + style.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <Text style={styles.label}>Message Frequency</Text>
-        <View style={styles.optionRow}>
-          {['low', 'moderate', 'high'].map((freq) => (
-            <TouchableOpacity
-              key={freq}
-              style={[
-                styles.optionButton,
-                preferences.messageFrequency === freq && styles.selectedOption
-              ]}
-              onPress={() => setPreferences({ ...preferences, messageFrequency: freq })}
-            >
-              <Text style={[
-                styles.optionText,
-                preferences.messageFrequency === freq && styles.selectedText
-              ]}>
-                {freq.charAt(0).toUpperCase() + freq.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <Text style={styles.label}>Best Time to Chat</Text>
-        <View style={styles.optionRow}>
-          {['morning', 'afternoon', 'evening', 'night'].map((time) => (
-            <TouchableOpacity
-              key={time}
-              style={[
-                styles.optionButton,
-                preferences.bestTimeToChat === time && styles.selectedOption
-              ]}
-              onPress={() => setPreferences({ ...preferences, bestTimeToChat: time })}
-            >
-              <Text style={[
-                styles.optionText,
-                preferences.bestTimeToChat === time && styles.selectedText
-              ]}>
-                {time.charAt(0).toUpperCase() + time.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Interests</Text>
-        <View style={styles.interestInput}>
+        <Text style={styles.label}>Programming Languages</Text>
+        <View style={styles.itemInput}>
           <TextInput
             style={styles.input}
-            placeholder="Add an interest..."
-            value={preferences.currentInterest}
-            onChangeText={(text) => setPreferences({ ...preferences, currentInterest: text })}
-            onSubmitEditing={addInterest}
+            placeholder="Add language (e.g., JavaScript, Python)"
+            placeholderTextColor={Colors.gray}
+            value={preferences.currentLanguage}
+            onChangeText={(text) => setPreferences({ ...preferences, currentLanguage: text })}
+            onSubmitEditing={() => addItem('primaryLanguages', 'currentLanguage')}
           />
-          <TouchableOpacity style={styles.addButton} onPress={addInterest}>
-            <Ionicons name="add" size={24} color="white" />
+          <TouchableOpacity 
+            style={styles.addButton} 
+            onPress={() => addItem('primaryLanguages', 'currentLanguage')}
+          >
+            <Ionicons name="add" size={24} color={Colors.background} />
           </TouchableOpacity>
         </View>
         
-        <View style={styles.interestsList}>
-          {preferences.interests.map((interest, index) => (
-            <View key={index} style={styles.interestChip}>
-              <Text style={styles.interestText}>{interest}</Text>
-              <TouchableOpacity onPress={() => removeInterest(index)}>
+        <View style={styles.itemsList}>
+          {preferences.primaryLanguages.map((lang, index) => (
+            <View key={index} style={styles.itemChip}>
+              <Text style={styles.itemText}>{lang}</Text>
+              <TouchableOpacity onPress={() => removeItem('primaryLanguages', index)}>
+                <Ionicons name="close-circle" size={20} color={Colors.gray} />
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+
+        <Text style={styles.label}>Frameworks & Libraries</Text>
+        <View style={styles.itemInput}>
+          <TextInput
+            style={styles.input}
+            placeholder="Add framework (e.g., React, Django)"
+            placeholderTextColor={Colors.gray}
+            value={preferences.currentFramework}
+            onChangeText={(text) => setPreferences({ ...preferences, currentFramework: text })}
+            onSubmitEditing={() => addItem('frameworks', 'currentFramework')}
+          />
+          <TouchableOpacity 
+            style={styles.addButton} 
+            onPress={() => addItem('frameworks', 'currentFramework')}
+          >
+            <Ionicons name="add" size={24} color={Colors.background} />
+          </TouchableOpacity>
+        </View>
+        
+        <View style={styles.itemsList}>
+          {preferences.frameworks.map((framework, index) => (
+            <View key={index} style={styles.itemChip}>
+              <Text style={styles.itemText}>{framework}</Text>
+              <TouchableOpacity onPress={() => removeItem('frameworks', index)}>
                 <Ionicons name="close-circle" size={20} color={Colors.gray} />
               </TouchableOpacity>
             </View>
@@ -196,76 +188,184 @@ export default function PreferencesScreen({ navigation }) {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Social Preferences</Text>
+        <Text style={styles.sectionTitle}>🚀 Work Style</Text>
         
-        <View style={styles.switchRow}>
-          <Text style={styles.switchLabel}>I enjoy group chats</Text>
-          <Switch
-            value={preferences.likesGroupChats}
-            onValueChange={(value) => setPreferences({ ...preferences, likesGroupChats: value })}
-            trackColor={{ false: Colors.gray, true: Colors.primary }}
-          />
-        </View>
-
-        <View style={styles.switchRow}>
-          <Text style={styles.switchLabel}>I prefer video chats</Text>
-          <Switch
-            value={preferences.prefersVideoChats}
-            onValueChange={(value) => setPreferences({ ...preferences, prefersVideoChats: value })}
-            trackColor={{ false: Colors.gray, true: Colors.primary }}
-          />
-        </View>
-
-        <View style={styles.switchRow}>
-          <Text style={styles.switchLabel}>I like voice messages</Text>
-          <Switch
-            value={preferences.likesVoiceMessages}
-            onValueChange={(value) => setPreferences({ ...preferences, likesVoiceMessages: value })}
-            trackColor={{ false: Colors.gray, true: Colors.primary }}
-          />
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Personality</Text>
-        
-        <Text style={styles.label}>Social Style</Text>
+        <Text style={styles.label}>Schedule Preference</Text>
         <View style={styles.optionRow}>
-          {['introvert', 'extrovert', 'balanced'].map((type) => (
+          {['early-bird', 'nine-to-five', 'night-owl', 'flexible'].map((schedule) => (
+            <TouchableOpacity
+              key={schedule}
+              style={[
+                styles.optionButton,
+                preferences.workSchedule === schedule && styles.selectedOption
+              ]}
+              onPress={() => setPreferences({ ...preferences, workSchedule: schedule })}
+            >
+              <Text style={[
+                styles.optionText,
+                preferences.workSchedule === schedule && styles.selectedText
+              ]}>
+                {schedule.split('-').map(word => 
+                  word.charAt(0).toUpperCase() + word.slice(1)
+                ).join(' ')}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={styles.label}>Experience Level</Text>
+        <View style={styles.optionRow}>
+          {['junior', 'mid', 'senior', 'principal'].map((level) => (
+            <TouchableOpacity
+              key={level}
+              style={[
+                styles.optionButton,
+                preferences.experienceLevel === level && styles.selectedOption
+              ]}
+              onPress={() => setPreferences({ ...preferences, experienceLevel: level })}
+            >
+              <Text style={[
+                styles.optionText,
+                preferences.experienceLevel === level && styles.selectedText
+              ]}>
+                {level.charAt(0).toUpperCase() + level.slice(1)}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={styles.label}>Project Type</Text>
+        <View style={styles.optionRow}>
+          {['frontend', 'backend', 'fullstack', 'mobile'].map((type) => (
             <TouchableOpacity
               key={type}
               style={[
                 styles.optionButton,
-                preferences.personality === type && styles.selectedOption
+                preferences.projectTypes === type && styles.selectedOption
               ]}
-              onPress={() => setPreferences({ ...preferences, personality: type })}
+              onPress={() => setPreferences({ ...preferences, projectTypes: type })}
             >
               <Text style={[
                 styles.optionText,
-                preferences.personality === type && styles.selectedText
+                preferences.projectTypes === type && styles.selectedText
               ]}>
                 {type.charAt(0).toUpperCase() + type.slice(1)}
               </Text>
             </TouchableOpacity>
           ))}
         </View>
+      </View>
 
-        <Text style={styles.label}>Humor Style</Text>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>👥 Collaboration</Text>
+        
+        <View style={styles.switchRow}>
+          <Text style={styles.switchLabel}>Enjoy Pair Programming</Text>
+          <Switch
+            value={preferences.pairProgramming}
+            onValueChange={(value) => setPreferences({ ...preferences, pairProgramming: value })}
+            trackColor={{ false: Colors.gray, true: Colors.primary }}
+          />
+        </View>
+
+        <View style={styles.switchRow}>
+          <Text style={styles.switchLabel}>Open to Code Reviews</Text>
+          <Switch
+            value={preferences.codeReviews}
+            onValueChange={(value) => setPreferences({ ...preferences, codeReviews: value })}
+            trackColor={{ false: Colors.gray, true: Colors.primary }}
+          />
+        </View>
+
+        <View style={styles.switchRow}>
+          <Text style={styles.switchLabel}>Contribute to Open Source</Text>
+          <Switch
+            value={preferences.openSource}
+            onValueChange={(value) => setPreferences({ ...preferences, openSource: value })}
+            trackColor={{ false: Colors.gray, true: Colors.primary }}
+          />
+        </View>
+
+        <View style={styles.switchRow}>
+          <Text style={styles.switchLabel}>Available for Mentoring</Text>
+          <Switch
+            value={preferences.mentoring}
+            onValueChange={(value) => setPreferences({ ...preferences, mentoring: value })}
+            trackColor={{ false: Colors.gray, true: Colors.primary }}
+          />
+        </View>
+
+        <View style={styles.switchRow}>
+          <Text style={styles.switchLabel}>Remote Work Preferred</Text>
+          <Switch
+            value={preferences.remoteWork}
+            onValueChange={(value) => setPreferences({ ...preferences, remoteWork: value })}
+            trackColor={{ false: Colors.gray, true: Colors.primary }}
+          />
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>⚡ Developer Personality</Text>
+        
+        <Text style={styles.label}>Tabs vs Spaces?</Text>
         <View style={styles.optionRow}>
-          {['sarcastic', 'witty', 'wholesome', 'mixed'].map((humor) => (
+          {['tabs', 'spaces', '2-spaces', '4-spaces'].map((indent) => (
             <TouchableOpacity
-              key={humor}
+              key={indent}
               style={[
                 styles.optionButton,
-                preferences.humor === humor && styles.selectedOption
+                preferences.tabsVsSpaces === indent && styles.selectedOption
               ]}
-              onPress={() => setPreferences({ ...preferences, humor: humor })}
+              onPress={() => setPreferences({ ...preferences, tabsVsSpaces: indent })}
             >
               <Text style={[
                 styles.optionText,
-                preferences.humor === humor && styles.selectedText
+                preferences.tabsVsSpaces === indent && styles.selectedText
               ]}>
-                {humor.charAt(0).toUpperCase() + humor.slice(1)}
+                {indent.charAt(0).toUpperCase() + indent.slice(1)}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={styles.label}>Caffeine Dependency</Text>
+        <View style={styles.optionRow}>
+          {['none', 'low', 'moderate', 'high'].map((level) => (
+            <TouchableOpacity
+              key={level}
+              style={[
+                styles.optionButton,
+                preferences.caffeineDependency === level && styles.selectedOption
+              ]}
+              onPress={() => setPreferences({ ...preferences, caffeineDependency: level })}
+            >
+              <Text style={[
+                styles.optionText,
+                preferences.caffeineDependency === level && styles.selectedText
+              ]}>
+                {level === 'high' ? '☕☕☕' : level.charAt(0).toUpperCase() + level.slice(1)}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={styles.label}>Preferred IDE</Text>
+        <View style={styles.optionRow}>
+          {['vscode', 'vim', 'jetbrains', 'other'].map((ide) => (
+            <TouchableOpacity
+              key={ide}
+              style={[
+                styles.optionButton,
+                preferences.preferredIDE === ide && styles.selectedOption
+              ]}
+              onPress={() => setPreferences({ ...preferences, preferredIDE: ide })}
+            >
+              <Text style={[
+                styles.optionText,
+                preferences.preferredIDE === ide && styles.selectedText
+              ]}>
+                {ide === 'vscode' ? 'VS Code' : ide.charAt(0).toUpperCase() + ide.slice(1)}
               </Text>
             </TouchableOpacity>
           ))}
@@ -273,12 +373,44 @@ export default function PreferencesScreen({ navigation }) {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Friendship Goals</Text>
+        <Text style={styles.sectionTitle}>📚 Learning Goals</Text>
+        <View style={styles.itemInput}>
+          <TextInput
+            style={styles.input}
+            placeholder="What do you want to learn next?"
+            placeholderTextColor={Colors.gray}
+            value={preferences.currentLearningGoal}
+            onChangeText={(text) => setPreferences({ ...preferences, currentLearningGoal: text })}
+            onSubmitEditing={() => addItem('learningGoals', 'currentLearningGoal')}
+          />
+          <TouchableOpacity 
+            style={styles.addButton} 
+            onPress={() => addItem('learningGoals', 'currentLearningGoal')}
+          >
+            <Ionicons name="add" size={24} color={Colors.background} />
+          </TouchableOpacity>
+        </View>
+        
+        <View style={styles.itemsList}>
+          {preferences.learningGoals.map((goal, index) => (
+            <View key={index} style={styles.itemChip}>
+              <Text style={styles.itemText}>{goal}</Text>
+              <TouchableOpacity onPress={() => removeItem('learningGoals', index)}>
+                <Ionicons name="close-circle" size={20} color={Colors.gray} />
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>😄 Fun Stuff</Text>
         <TextInput
           style={styles.textArea}
-          placeholder="What do you hope to achieve in your friendships?"
-          value={preferences.friendshipGoals}
-          onChangeText={(text) => setPreferences({ ...preferences, friendshipGoals: text })}
+          placeholder="Your favorite dev joke or quote..."
+          placeholderTextColor={Colors.gray}
+          value={preferences.favoriteDevJoke}
+          onChangeText={(text) => setPreferences({ ...preferences, favoriteDevJoke: text })}
           multiline
           numberOfLines={4}
         />
@@ -290,9 +422,9 @@ export default function PreferencesScreen({ navigation }) {
         disabled={saving}
       >
         {saving ? (
-          <ActivityIndicator size="small" color="white" />
+          <ActivityIndicator size="small" color={Colors.background} />
         ) : (
-          <Text style={styles.saveButtonText}>Save Preferences</Text>
+          <Text style={styles.saveButtonText}>Save Dev Preferences</Text>
         )}
       </TouchableOpacity>
     </ScrollView>
@@ -308,57 +440,59 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: Colors.background,
   },
   section: {
-    backgroundColor: 'white',
+    backgroundColor: Colors.surface,
     margin: 10,
     padding: 20,
     borderRadius: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: Colors.lightGray,
   },
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: Colors.primary,
     marginBottom: 15,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   label: {
     fontSize: 16,
     fontWeight: '600',
-    color: Colors.black,
+    color: Colors.text,
     marginTop: 10,
     marginBottom: 10,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   optionRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    flexWrap: 'wrap',
+    gap: 10,
     marginBottom: 15,
   },
   optionButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingHorizontal: 15,
+    paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: Colors.gray,
-    backgroundColor: 'white',
+    borderColor: Colors.lightGray,
+    backgroundColor: Colors.background,
   },
   selectedOption: {
     backgroundColor: Colors.primary,
     borderColor: Colors.primary,
   },
   optionText: {
-    color: Colors.gray,
+    color: Colors.textSecondary,
     fontSize: 14,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   selectedText: {
-    color: 'white',
+    color: Colors.background,
     fontWeight: 'bold',
   },
-  interestInput: {
+  itemInput: {
     flexDirection: 'row',
     marginBottom: 10,
   },
@@ -366,35 +500,41 @@ const styles = StyleSheet.create({
     flex: 1,
     borderWidth: 1,
     borderColor: Colors.lightGray,
-    borderRadius: 25,
+    borderRadius: 10,
     paddingHorizontal: 15,
     paddingVertical: 10,
     marginRight: 10,
+    backgroundColor: Colors.background,
+    color: Colors.text,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   addButton: {
     backgroundColor: Colors.primary,
-    borderRadius: 25,
+    borderRadius: 10,
     width: 40,
     height: 40,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  interestsList: {
+  itemsList: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    gap: 8,
   },
-  interestChip: {
+  itemChip: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.primary + '20',
     borderRadius: 20,
     paddingHorizontal: 15,
     paddingVertical: 8,
-    margin: 5,
+    borderWidth: 1,
+    borderColor: Colors.primary,
   },
-  interestText: {
+  itemText: {
     color: Colors.primary,
     marginRight: 5,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   switchRow: {
     flexDirection: 'row',
@@ -404,7 +544,8 @@ const styles = StyleSheet.create({
   },
   switchLabel: {
     fontSize: 16,
-    color: Colors.black,
+    color: Colors.text,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   textArea: {
     borderWidth: 1,
@@ -413,20 +554,24 @@ const styles = StyleSheet.create({
     padding: 15,
     height: 100,
     textAlignVertical: 'top',
+    backgroundColor: Colors.background,
+    color: Colors.text,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   saveButton: {
     backgroundColor: Colors.primary,
     margin: 20,
     padding: 15,
-    borderRadius: 25,
+    borderRadius: 10,
     alignItems: 'center',
   },
   saveButtonDisabled: {
     opacity: 0.6,
   },
   saveButtonText: {
-    color: 'white',
+    color: Colors.background,
     fontSize: 16,
     fontWeight: 'bold',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
 });

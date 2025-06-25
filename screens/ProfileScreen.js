@@ -5,7 +5,7 @@ import React, { useEffect, useState } from 'react';
 import { 
   Alert, 
   Modal, 
-  Platform, 
+  Platform,
   StyleSheet, 
   Text, 
   TouchableOpacity, 
@@ -17,10 +17,14 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { FriendshipInsights } from '../components/AIAssistant';
+import PayPalSubscription from '../components/PayPalSubscription';
+import SubscriptionService from '../services/SubscriptionService';
 import OpenAIService from '../services/OpenAIService';
 import { Colors } from '../constants/Colors';
 import { auth, db } from '../firebase';
 import { uploadToCloudinary } from '../services/cloudinaryConfig';
+
+// Make sure there are NO other imports from 'react-native' below this
 
 export default function ProfileScreen({ navigation }) {
   const [activeStoriesCount, setActiveStoriesCount] = useState(0);
@@ -38,37 +42,60 @@ export default function ProfileScreen({ navigation }) {
     allowSearchByPhone: false,
   });
   const [blockedUsers, setBlockedUsers] = useState([]);
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [subscriptionStatus, setSubscriptionStatus] = useState(null);
 
-  useEffect(() => {
-    if (!auth.currentUser) return;
+ useEffect(() => {
+  if (!auth.currentUser) return;
 
-    // Load user data including profile picture and privacy settings
-    loadUserData();
+  // Initialize subscription service
+  let unsubscribeFromSubscription;
+  
+  const initSubscription = async () => {
+    unsubscribeFromSubscription = await SubscriptionService.initializeSubscription();
+  };
+  
+  initSubscription();
+  
+  SubscriptionService.addListener((status) => {
+    setSubscriptionStatus(status);
+  });
 
-    // Load active stories count
-    const q = query(
-      collection(db, 'snaps'),
-      where('userId', '==', auth.currentUser.uid),
-      where('type', '==', 'story')
-    );
+  // Load user data including profile picture and privacy settings
+  loadUserData();
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const now = new Date();
-      let activeCount = 0;
-      
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        const expiresAt = new Date(data.expiresAt);
-        if (expiresAt > now) {
-          activeCount++;
-        }
-      });
-      
-      setActiveStoriesCount(activeCount);
+  // Load active stories count
+  const q = query(
+    collection(db, 'snaps'),
+    where('userId', '==', auth.currentUser.uid),
+    where('type', '==', 'story')
+  );
+
+  const unsubscribe = onSnapshot(q, (snapshot) => {
+    const now = new Date();
+    let activeCount = 0;
+    
+    snapshot.forEach((doc) => {
+      const data = doc.data();
+      const expiresAt = new Date(data.expiresAt);
+      if (expiresAt > now) {
+        activeCount++;
+      }
     });
+    
+    setActiveStoriesCount(activeCount);
+  });
 
-    return unsubscribe;
-  }, []);
+  return () => {
+    unsubscribe();
+    if (unsubscribeFromSubscription && typeof unsubscribeFromSubscription === 'function') {
+      unsubscribeFromSubscription();
+    }
+    SubscriptionService.removeListener((status) => {
+      setSubscriptionStatus(status);
+    });
+  };
+}, []);
 
   const loadUserData = async () => {
     try {
@@ -196,11 +223,37 @@ export default function ProfileScreen({ navigation }) {
             <Ionicons name="camera" size={20} color="white" />
           </View>
         </TouchableOpacity>
-        <Text style={styles.username}>{user?.displayName || 'User'}</Text>
+        <Text style={styles.username}>{user?.displayName || 'Developer'}</Text>
         <Text style={styles.email}>{user?.email}</Text>
       </View>
       
       <View style={styles.section}>
+        <TouchableOpacity 
+          style={styles.menuItem}
+          onPress={() => setShowSubscriptionModal(true)}
+        >
+          <Ionicons 
+            name={subscriptionStatus?.isSubscribed ? "star" : "star-outline"} 
+            size={24} 
+            color={subscriptionStatus?.isSubscribed ? Colors.warning : "#333"} 
+          />
+          <Text style={styles.menuText}>
+            {subscriptionStatus?.isSubscribed ? 'DevChat Pro' : 'Upgrade to Pro'}
+          </Text>
+          {!subscriptionStatus?.isSubscribed && (
+            <Text style={styles.priceText}>$5/mo</Text>
+          )}
+        </TouchableOpacity>
+
+        {!subscriptionStatus?.isSubscribed && (
+          <View style={styles.limitInfo}>
+            <Text style={styles.limitText}>
+              Free tier: {subscriptionStatus?.remaining?.snaps || 20} snaps, 
+              {subscriptionStatus?.remaining?.stories || 20} stories left this month
+            </Text>
+          </View>
+        )}
+
         <TouchableOpacity 
           style={styles.menuItem}
           onPress={() => navigation.navigate('AddFriends')}
@@ -314,17 +367,7 @@ export default function ProfileScreen({ navigation }) {
                 />
               </View>
 
-              <View style={styles.switchRow}>
-                <Text style={styles.switchLabel}>Show Location on Map</Text>
-                <Switch
-                  value={privacySettings.showLocation}
-                  onValueChange={(value) => updatePrivacySettings({
-                    ...privacySettings,
-                    showLocation: value
-                  })}
-                  trackColor={{ false: Colors.gray, true: Colors.primary }}
-                />
-              </View>
+              
 
               <View style={styles.switchRow}>
                 <Text style={styles.switchLabel}>Show Active Status</Text>
@@ -350,6 +393,55 @@ export default function ProfileScreen({ navigation }) {
                 />
               </View>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Subscription Modal */}
+      <Modal
+        visible={showSubscriptionModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowSubscriptionModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.subscriptionModal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Upgrade to DevChat Pro</Text>
+              <TouchableOpacity onPress={() => setShowSubscriptionModal(false)}>
+                <Ionicons name="close" size={24} color="#000" />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.proFeatures}>
+              <Text style={styles.featuresTitle}>Pro Features:</Text>
+              <View style={styles.featureItem}>
+                <Ionicons name="infinite" size={20} color={Colors.primary} />
+                <Text style={styles.featureText}>Unlimited snaps & stories</Text>
+              </View>
+              <View style={styles.featureItem}>
+                <Ionicons name="code-working" size={20} color={Colors.primary} />
+                <Text style={styles.featureText}>Advanced AI code analysis</Text>
+              </View>
+              <View style={styles.featureItem}>
+                <Ionicons name="git-network" size={20} color={Colors.primary} />
+                <Text style={styles.featureText}>Priority friend matching</Text>
+              </View>
+              <View style={styles.featureItem}>
+                <Ionicons name="shield-checkmark" size={20} color={Colors.primary} />
+                <Text style={styles.featureText}>Early access to new features</Text>
+              </View>
+            </View>
+
+            <PayPalSubscription 
+              onSuccess={(subscriptionId) => {
+                Alert.alert('Success!', 'Welcome to DevChat Pro!');
+                setShowSubscriptionModal(false);
+              }}
+              onError={(error) => {
+                Alert.alert('Error', 'Failed to process subscription');
+              }}
+            />
           </View>
         </View>
       </Modal>
@@ -460,6 +552,21 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 40,
   },
+  priceText: {
+    color: Colors.primary,
+    fontWeight: 'bold',
+  },
+  limitInfo: {
+    backgroundColor: Colors.warning + '20',
+    padding: 10,
+    marginHorizontal: 20,
+    borderRadius: 8,
+  },
+  limitText: {
+    color: Colors.warning,
+    fontSize: 12,
+    textAlign: 'center',
+  },
   modalContainer: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -520,28 +627,60 @@ const styles = StyleSheet.create({
     fontSize: 16,
     flex: 1,
   },
-  insightsModal: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  insightsContent: {
+  subscriptionModal: {
     backgroundColor: 'white',
     borderRadius: 20,
     padding: 20,
     maxHeight: '80%',
+    width: '90%',
   },
-  insightsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
+  proFeatures: {
+    marginVertical: 20,
   },
-  insightsTitle: {
-    fontSize: 20,
+  featuresTitle: {
+    fontSize: 18,
     fontWeight: 'bold',
+    marginBottom: 15,
   },
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  featureText: {
+    marginLeft: 10,
+    fontSize: 16,
+  },
+  // Update these styles in ProfileScreen.js:
+
+insightsModal: {
+  flex: 1,
+  backgroundColor: 'rgba(0,0,0,0.5)',
+  justifyContent: 'center',
+  paddingHorizontal: 10, // Reduced padding for bigger modal
+},
+insightsContent: {
+  backgroundColor: Colors.surface, // Use dark theme color
+  borderRadius: 20,
+  padding: 20,
+  maxHeight: '90%', // Increased from 80% to 90%
+  minHeight: '70%', // Added minimum height
+},
+insightsHeader: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  marginBottom: 20,
+  borderBottomWidth: 1,
+  borderBottomColor: Colors.lightGray,
+  paddingBottom: 15,
+},
+insightsTitle: {
+  fontSize: 24, // Increased from 20
+  fontWeight: 'bold',
+  color: Colors.primary,
+  fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+},
   logoutButton: {
     margin: 20,
     backgroundColor: '#FF6B5C',

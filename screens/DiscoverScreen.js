@@ -224,36 +224,39 @@ export default function DiscoverScreen({ navigation }) {
 };
 
   const renderSnapItem = ({ item }) => (
-    <TouchableOpacity style={styles.snapItem} onPress={() => viewSnap(item)}>
-      <View style={styles.snapThumbnail}>
-        {item.mediaType === 'video' ? (
-          <View style={styles.videoThumbnail}>
-            <Ionicons name="play-circle" size={40} color="white" />
-          </View>
-        ) : (
-          <Image source={{ uri: item.imageUrl }} style={styles.thumbnailImage} />
-        )}
-        {item.userLiked && (
-          <View style={styles.likedIndicator}>
-            <Ionicons name="heart" size={16} color="#FF6B6B" />
-          </View>
-        )}
-      </View>
-      <View style={styles.snapInfo}>
-        <Text style={styles.snapUsername}>{item.username}</Text>
-        {activeTab === 'trending' ? (
-          <View style={styles.engagementRow}>
-            <Ionicons name="eye" size={16} color={Colors.gray} />
-            <Text style={styles.engagementText}>{item.views || 0}</Text>
-            <Ionicons name="heart" size={16} color={Colors.gray} style={{ marginLeft: 10 }} />
-            <Text style={styles.engagementText}>{item.likes || 0}</Text>
-          </View>
-        ) : (
-          <Text style={styles.distanceText}>{item.distance} km away</Text>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
+  <TouchableOpacity style={styles.snapItem} onPress={() => viewSnap(item)}>
+    <View style={styles.snapThumbnail}>
+      {item.mediaType === 'video' ? (
+        <View style={styles.videoThumbnail}>
+          <Ionicons name="play-circle" size={40} color="white" />
+          {item.imageUrl && (
+            <Image source={{ uri: item.imageUrl }} style={styles.thumbnailImage} />
+          )}
+        </View>
+      ) : (
+        <Image source={{ uri: item.imageUrl }} style={styles.thumbnailImage} />
+      )}
+      {item.userLiked && (
+        <View style={styles.likedIndicator}>
+          <Ionicons name="heart" size={16} color="#FF6B6B" />
+        </View>
+      )}
+    </View>
+    <View style={styles.snapInfo}>
+      <Text style={styles.snapUsername}>{item.username}</Text>
+      {activeTab === 'trending' ? (
+        <View style={styles.engagementRow}>
+          <Ionicons name="eye" size={16} color={Colors.gray} />
+          <Text style={styles.engagementText}>{item.views || 0}</Text>
+          <Ionicons name="heart" size={16} color={Colors.gray} style={{ marginLeft: 10 }} />
+          <Text style={styles.engagementText}>{item.likes || 0}</Text>
+        </View>
+      ) : (
+        <Text style={styles.distanceText}>{item.distance} km away</Text>
+      )}
+    </View>
+  </TouchableOpacity>
+);
 
   return (
     <View style={styles.container}>

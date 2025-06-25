@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
-import { Alert, Dimensions, FlatList, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Dimensions, FlatList, Modal, StyleSheet, Text, TouchableOpacity, View, Image } from 'react-native';
 import SnapRenderer from '../components/SnapRenderer';
 import { StoryIdeasWidget } from '../components/AIAssistant';
+import { Video } from 'expo-av';
 import { db } from '../firebase';
 
 const { width } = Dimensions.get('window');
@@ -78,9 +79,21 @@ export default function StoriesScreen() {
     setViewingStory(null);
   };
 
-  const renderStory = ({ item }) => (
-    <TouchableOpacity style={styles.storyItem} onPress={() => viewStory(item)}>
-      <View style={styles.storyImageContainer}>
+const renderStory = ({ item }) => (
+  <TouchableOpacity style={styles.storyItem} onPress={() => viewStory(item)}>
+    <View style={styles.storyImageContainer}>
+      {item.mediaType === 'video' ? (
+        // Show a thumbnail or placeholder for videos instead of playing them
+        <View style={styles.videoThumbnail}>
+          <Ionicons name="play-circle" size={40} color="white" />
+          {item.imageUrl && (
+            <Image 
+              source={{ uri: item.imageUrl }} 
+              style={styles.storyThumbnail}
+            />
+          )}
+        </View>
+      ) : (
         <SnapRenderer
           imageUrl={item.imageUrl}
           imageData={item.imageData}
@@ -88,13 +101,14 @@ export default function StoriesScreen() {
           containerStyle={styles.storyThumbnailContainer}
           imageStyle={styles.storyThumbnail}
         />
-      </View>
-      <View style={styles.storyOverlay}>
-        <Text style={styles.username}>{item.username}</Text>
-        <Text style={styles.storyTime}>{getTimeAgo(item.timestamp)}</Text>
-      </View>
-    </TouchableOpacity>
-  );
+      )}
+    </View>
+    <View style={styles.storyOverlay}>
+      <Text style={styles.username}>{item.username}</Text>
+      <Text style={styles.storyTime}>{getTimeAgo(item.timestamp)}</Text>
+    </View>
+  </TouchableOpacity>
+);
 
   return (
     <View style={styles.container}>
@@ -129,41 +143,54 @@ export default function StoriesScreen() {
         </>
       )}
 
-      <Modal
-        visible={viewingStory !== null}
-        animationType="fade"
-        onRequestClose={closeStory}
-      >
-        {viewingStory && (
-          <TouchableOpacity 
-            style={styles.storyModal} 
-            activeOpacity={1}
-            onPress={closeStory}
-          >
-            <View style={styles.storyHeader}>
-              <View style={styles.storyHeaderInfo}>
-                <Ionicons name="person-circle" size={30} color="white" />
-                <Text style={styles.storySenderModal}>{viewingStory.username}</Text>
-              </View>
-              <TouchableOpacity onPress={closeStory} style={styles.closeButton}>
-                <Ionicons name="close" size={30} color="white" />
-              </TouchableOpacity>
-            </View>
-            
-            <SnapRenderer 
-              imageUrl={viewingStory.imageUrl}
-              imageData={viewingStory.imageData}
-              metadata={viewingStory.metadata}
-              containerStyle={styles.fullStoryContainer}
-              imageStyle={styles.fullStoryImage}
-            />
-            
-            <View style={styles.storyFooter}>
-              <Text style={styles.timerText}>Closes automatically in 10s</Text>
-            </View>
-          </TouchableOpacity>
-        )}
-      </Modal>
+     <Modal
+  visible={viewingStory !== null}
+  animationType="fade"
+  onRequestClose={closeStory}
+>
+  {viewingStory && (
+    <TouchableOpacity 
+      style={styles.storyModal} 
+      activeOpacity={1}
+      onPress={closeStory}
+    >
+      <View style={styles.storyHeader}>
+        <View style={styles.storyHeaderInfo}>
+          <Ionicons name="person-circle" size={30} color="white" />
+          <Text style={styles.storySenderModal}>{viewingStory.username}</Text>
+        </View>
+        <TouchableOpacity onPress={closeStory} style={styles.closeButton}>
+          <Ionicons name="close" size={30} color="white" />
+        </TouchableOpacity>
+      </View>
+      
+      {/* For modal viewing, we need to handle video playback differently */}
+      {viewingStory.mediaType === 'video' ? (
+        <Video
+          source={{ uri: viewingStory.imageUrl }}
+          style={styles.fullStoryImage}
+          shouldPlay={true}
+          isLooping={true}
+          resizeMode="contain"
+          isMuted={false}
+          volume={0.8}
+        />
+      ) : (
+        <SnapRenderer 
+          imageUrl={viewingStory.imageUrl}
+          imageData={viewingStory.imageData}
+          metadata={viewingStory.metadata}
+          containerStyle={styles.fullStoryContainer}
+          imageStyle={styles.fullStoryImage}
+        />
+      )}
+      
+      <View style={styles.storyFooter}>
+        <Text style={styles.timerText}>Closes automatically in 10s</Text>
+      </View>
+    </TouchableOpacity>
+  )}
+</Modal>
     </View>
   );
 }
@@ -266,6 +293,14 @@ const styles = StyleSheet.create({
   fullStoryImage: {
     resizeMode: 'contain',
   },
+
+  videoThumbnail: {
+  width: '100%',
+  height: '100%',
+  backgroundColor: '#000',
+  justifyContent: 'center',
+  alignItems: 'center',
+},
 
   header: {
     flexDirection: 'row',

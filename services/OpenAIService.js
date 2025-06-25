@@ -448,216 +448,375 @@ class OpenAIService {
   }
 
   // 4. Story Ideas Generator
-  async generateStoryIdeas() {
+ // 4. Story Ideas Generator - Enhanced with developer context
+async generateStoryIdeas() {
+  try {
+    // Gather comprehensive context
+    const context = await this.gatherComprehensiveContext();
+    
     if (!this.openai) {
-      return this.fallbackStoryIdeas();
+      return this.contextAwareStoryIdeas(context);
     }
 
-    try {
-      const dayOfWeek = new Date().toLocaleDateString('en-US', { weekday: 'long' });
-      const hour = new Date().getHours();
-      
-      const systemPrompt = `Generate creative, trendy story ideas for social media.`;
-      
-      const userPrompt = `Generate 10 story ideas for ${dayOfWeek} ${hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening'}.
-        Make them: trendy, fun, achievable with phone, varied content types, 5-10 words each`;
-      
-      const completion = await this.openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
-        ],
-        temperature: 0.85,
-        max_tokens: 300
-      });
-      
-      const ideas = completion.choices[0].message.content
-        .split('\n')
-        .filter(line => line.trim())
-        .map(line => line.replace(/^\d+\.\s*/, '').trim())
-        .slice(0, 10);
-      
-      return ideas.length > 0 ? ideas : this.fallbackStoryIdeas();
-    } catch (error) {
-      console.error('Error generating story ideas:', error);
-      return this.fallbackStoryIdeas();
+    const dayOfWeek = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+    const hour = new Date().getHours();
+    const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
+    
+    // Build context-aware prompt
+    const systemPrompt = `You are a creative story idea generator for developers on a social app. 
+    Generate ideas based on the user's context:
+    - Programming languages: ${context.user.interests?.join(', ') || 'various'}
+    - Work schedule: ${context.user.preferences?.workSchedule || 'flexible'}
+    - Experience level: ${context.user.preferences?.experienceLevel || 'unknown'}
+    - Current projects: ${context.user.preferences?.projectTypes || 'various'}
+    - Learning goals: ${context.user.preferences?.learningGoals?.join(', ') || 'continuous learning'}
+    - Recent chat topics: ${context.conversations.recentTopics?.slice(0, 3).join(', ') || 'general dev topics'}`;
+    
+    const userPrompt = `Generate 15 story ideas for ${dayOfWeek} ${timeOfDay} that mix:
+    1. Developer-specific content (coding, debugging, project updates)
+    2. Personal interests from their profile
+    3. Topics from recent conversations
+    4. General tech trends
+    5. Fun developer life moments
+    
+    Make them short (5-10 words), engaging, and varied. Include emojis where appropriate.`;
+    
+    const completion = await this.openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      temperature: 0.9,
+      max_tokens: 400
+    });
+    
+    const ideas = completion.choices[0].message.content
+      .split('\n')
+      .filter(line => line.trim())
+      .map(line => line.replace(/^\d+\.\s*/, '').trim())
+      .filter(idea => idea.length > 0)
+      .slice(0, 15);
+    
+    return ideas.length > 0 ? ideas : this.contextAwareStoryIdeas(context);
+  } catch (error) {
+    console.error('Error generating story ideas:', error);
+    const context = await this.gatherComprehensiveContext();
+    return this.contextAwareStoryIdeas(context);
+  }
+}
+
+// Add this new fallback method for context-aware story ideas
+contextAwareStoryIdeas(context) {
+  const ideas = [];
+  const hour = new Date().getHours();
+  const dayOfWeek = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+  
+  // Time-based developer ideas
+  if (hour < 12) {
+    ideas.push("Morning standup highlights 📊");
+    ideas.push("Coffee count: loading... ☕");
+    ideas.push("Today's coding playlist 🎵");
+  } else if (hour < 17) {
+    ideas.push("Lunch break coding challenge");
+    ideas.push("Afternoon debugging session 🐛");
+    ideas.push("Code review discoveries");
+  } else {
+    ideas.push("After hours side project 🚀");
+    ideas.push("Evening commit count 📈");
+    ideas.push("Night owl coding session 🦉");
+  }
+  
+  // Based on programming languages
+  if (context.user.preferences?.primaryLanguages) {
+    const langs = context.user.preferences.primaryLanguages;
+    if (langs.includes('JavaScript')) {
+      ideas.push("JavaScript tip of the day 💡");
+      ideas.push("npm install adventures");
+    }
+    if (langs.includes('Python')) {
+      ideas.push("Python one-liner magic 🐍");
+      ideas.push("pip install shenanigans");
+    }
+    if (langs.includes('Go') || langs.includes('Rust')) {
+      ideas.push("Systems programming wins 🏆");
     }
   }
+  
+  // Based on frameworks
+  if (context.user.preferences?.frameworks) {
+    const frameworks = context.user.preferences.frameworks;
+    if (frameworks.includes('React')) {
+      ideas.push("React hooks explained simply");
+      ideas.push("Component lifecycle moments");
+    }
+    if (frameworks.includes('Django') || frameworks.includes('Flask')) {
+      ideas.push("Backend API progress update");
+    }
+  }
+  
+  // Based on work style
+  if (context.user.preferences?.workSchedule === 'night-owl') {
+    ideas.push("3am coding breakthrough 🌙");
+    ideas.push("Late night deploy stories");
+  } else if (context.user.preferences?.workSchedule === 'early-bird') {
+    ideas.push("5am productivity hack");
+    ideas.push("Early morning code wins");
+  }
+  
+  // Based on experience level
+  if (context.user.preferences?.experienceLevel === 'senior' || 
+      context.user.preferences?.experienceLevel === 'principal') {
+    ideas.push("Mentoring junior devs today");
+    ideas.push("Architecture decisions explained");
+    ideas.push("Tech lead daily struggles");
+  } else if (context.user.preferences?.experienceLevel === 'junior') {
+    ideas.push("Learning progress update 📚");
+    ideas.push("First PR celebration 🎉");
+    ideas.push("Asking for code help");
+  }
+  
+  // Based on project type
+  if (context.user.preferences?.projectTypes === 'frontend') {
+    ideas.push("CSS magic tricks ✨");
+    ideas.push("UI/UX improvements today");
+  } else if (context.user.preferences?.projectTypes === 'backend') {
+    ideas.push("Database optimization wins");
+    ideas.push("API performance boost 🚀");
+  } else if (context.user.preferences?.projectTypes === 'fullstack') {
+    ideas.push("Frontend vs Backend today");
+    ideas.push("Full stack juggling act");
+  }
+  
+  // Based on collaboration preferences
+  if (context.user.preferences?.pairProgramming) {
+    ideas.push("Pair programming session recap");
+  }
+  if (context.user.preferences?.openSource) {
+    ideas.push("Open source contribution 🌟");
+    ideas.push("GitHub stars update");
+  }
+  
+  // Based on learning goals
+  if (context.user.preferences?.learningGoals?.length > 0) {
+    const goal = context.user.preferences.learningGoals[0];
+    ideas.push(`Learning ${goal} progress`);
+  }
+  
+  // Fun developer life ideas
+  ideas.push("Bug that fixed itself 🤔");
+  ideas.push("Code works, nobody knows why");
+  ideas.push("Git commit message hall of fame");
+  ideas.push("Stack Overflow saved me again");
+  ideas.push("Localhost:3000 adventures");
+  ideas.push("Console.log debugging life");
+  ideas.push("Code compiles first try! 🎊");
+  ideas.push("Meeting that should've been PR");
+  ideas.push("Tabs vs Spaces debate");
+  ideas.push("My dev environment tour");
+  
+  // Weekend specific
+  if (dayOfWeek === 'Saturday' || dayOfWeek === 'Sunday') {
+    ideas.push("Weekend project progress");
+    ideas.push("Hackathon vibes 💻");
+    ideas.push("Learning new tech stack");
+  }
+  
+  // Based on recent conversations
+  if (context.conversations?.activeConversations?.length > 0) {
+    ideas.push("Collab project sneak peek");
+    ideas.push("Code review highlights");
+  }
+  
+  // Randomize and return top 15
+  return ideas
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 15);
+}
+
+// Also update the fallbackStoryIdeas to be more developer-focused
+fallbackStoryIdeas() {
+  const ideas = [
+    "Debug diary: Day 47 🐛",
+    "Deployed to production! 🚀",
+    "Code review adventures",
+    "My terminal setup tour",
+    "Favorite VS Code extensions",
+    "Git commit of the day",
+    "Stack Overflow hero moment",
+    "Rubber duck debugging session",
+    "Coffee to code ratio 📊",
+    "Weekend project reveal",
+    "Learning new framework",
+    "Coding playlist drop 🎵",
+    "Home office setup tour",
+    "Merge conflict survivor",
+    "Documentation actually helped!"
+  ];
+  return ideas.sort(() => Math.random() - 0.5).slice(0, 10);
+}
 
   // 5. Friendship Insights
-  async analyzeFriendshipInsights() {
-    try {
-      console.log('Starting friendship insights analysis...');
-      
-      const friendData = await this.gatherFriendshipData();
-      
-      // Get user preferences
-      let userPreferences = {};
-      if (auth.currentUser) {
-        const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
-        if (userDoc.exists()) {
-          userPreferences = userDoc.data().preferences || {};
-        }
+  // Replace the analyzeFriendshipInsights method with this:
+async analyzeFriendshipInsights() {
+  try {
+    console.log('Starting developer friendship insights analysis...');
+    
+    const friendData = await this.gatherFriendshipData();
+    
+    // Get user preferences
+    let userPreferences = {};
+    if (auth.currentUser) {
+      const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+      if (userDoc.exists()) {
+        userPreferences = userDoc.data().preferences || {};
       }
-      
-      console.log('User preferences:', userPreferences);
-      
-      // Generate insights based on actual data and preferences
-      const insights = [];
-      const recommendations = [];
-      
-      // Basic activity insights
-      if (friendData.totalFriends > 0) {
-        if (friendData.activeFriends > 0) {
-          const activeRate = Math.round((friendData.activeFriends / friendData.totalFriends) * 100);
-          insights.push(`You're actively chatting with ${activeRate}% of your friends`);
-          
-          if (activeRate < 50) {
-            recommendations.push("Reach out to friends you haven't talked to recently");
-          }
-        } else {
-          insights.push("You haven't chatted with any friends yet");
-          recommendations.push("Start a conversation to connect with your friends");
-        }
-      }
-      
-      // Top interaction insight
-      if (friendData.topInteractions && friendData.topInteractions.length > 0) {
-        const topFriend = friendData.topInteractions[0];
-        insights.push(`Your most active chat is with ${topFriend.name} (${topFriend.messageCount} messages)`);
-        
-        if (friendData.topInteractions.length > 1) {
-          const secondFriend = friendData.topInteractions[1];
-          if (topFriend.messageCount > secondFriend.messageCount * 3) {
-            recommendations.push("Try balancing your conversations across more friends");
-          }
-        }
-      }
-      
-      // Message frequency insights based on preferences
-      if (userPreferences.messageFrequency) {
-        const avgMessagesPerFriend = friendData.activeFriends > 0 
-          ? Math.round(friendData.totalMessages / friendData.activeFriends)
-          : 0;
-        
-        if (userPreferences.messageFrequency === 'high' && avgMessagesPerFriend < 10) {
-          insights.push("You prefer frequent chats but have been quieter than usual");
-          recommendations.push("Try sending a quick hello to 3 friends today");
-        } else if (userPreferences.messageFrequency === 'low' && avgMessagesPerFriend > 20) {
-          insights.push("You're chatting more than your usual preference");
-          recommendations.push("It's okay to take breaks from messaging when you need to");
-        }
-      }
-      
-      // Time-based insights
-      if (userPreferences.bestTimeToChat && friendData.chatPatterns) {
-        const preferredTime = userPreferences.bestTimeToChat;
-        const actualPercentage = friendData.chatPatterns[preferredTime] || 0;
-        
-        if (actualPercentage > 0) {
-          insights.push(`${actualPercentage}% of your chats happen during your preferred ${preferredTime} time`);
-          
-          if (actualPercentage < 30) {
-            recommendations.push(`Try scheduling more chats in the ${preferredTime} when you're most comfortable`);
-          }
-        }
-      }
-      
-      // Personality-based insights
-      if (userPreferences.personality) {
-        if (userPreferences.personality === 'introvert') {
-          if (friendData.activeFriends > 5) {
-            insights.push("You're managing a large social circle well as an introvert!");
-            recommendations.push("Remember to take time for yourself between conversations");
-          }
-        } else if (userPreferences.personality === 'extrovert') {
-          if (friendData.activeFriends < 3) {
-            insights.push("As an extrovert, you might enjoy connecting with more friends");
-            recommendations.push("Join group chats or reach out to new friends");
-          }
-        }
-      }
-      
-      // Interest-based recommendations
-      if (userPreferences.interests && userPreferences.interests.length > 0) {
-        const randomInterest = userPreferences.interests[Math.floor(Math.random() * userPreferences.interests.length)];
-        recommendations.push(`Share something about ${randomInterest} with a friend today`);
-      }
-      
-      // Communication style recommendations
-      if (userPreferences.preferredChatStyle) {
-        switch (userPreferences.preferredChatStyle) {
-          case 'casual':
-            recommendations.push("Send a funny meme or emoji to brighten someone's day");
-            break;
-          case 'formal':
-            recommendations.push("Write a thoughtful message asking about someone's goals");
-            break;
-          case 'mixed':
-            recommendations.push("Mix it up with both casual jokes and deeper conversations");
-            break;
-        }
-      }
-      
-      // Social preference insights
-      if (userPreferences.likesGroupChats) {
-        recommendations.push("Create a group chat for friends with similar interests");
-      }
-      
-      if (userPreferences.prefersVideoChats) {
-        recommendations.push("Suggest a video call to catch up more personally");
-      }
-      
-      // Humor style recommendation
-      if (userPreferences.humor) {
-        switch (userPreferences.humor) {
-          case 'sarcastic':
-            recommendations.push("Share a witty observation about your day");
-            break;
-          case 'wholesome':
-            recommendations.push("Send an encouraging message to someone who might need it");
-            break;
-          case 'witty':
-            recommendations.push("Start a fun wordplay or pun conversation");
-            break;
-        }
-      }
-      
-      // Make sure we always have some insights
-      if (insights.length === 0) {
-        insights.push("Complete your preferences to get personalized insights");
-        insights.push("Start chatting to see your communication patterns");
-      }
-      
-      if (recommendations.length === 0) {
-        recommendations.push("Send a snap to connect with friends");
-        recommendations.push("Update your preferences for better recommendations");
-      }
-      
-      console.log('Generated insights:', insights);
-      console.log('Generated recommendations:', recommendations);
-      
-      return {
-        insights: insights.slice(0, 5), // Limit to 5 insights
-        recommendations: recommendations.slice(0, 3), // Limit to 3 recommendations
-        preferences: userPreferences
-      };
-    } catch (error) {
-      console.error('Error analyzing friendships:', error);
-      return {
-        insights: [
-          "We're having trouble loading your insights",
-          "Try chatting with friends to generate data",
-          "Make sure your preferences are saved"
-        ],
-        recommendations: [
-          "Check your internet connection",
-          "Update your preferences in settings"
-        ]
-      };
     }
+    
+    console.log('Developer preferences:', userPreferences);
+    
+    // Generate developer-specific insights
+    const insights = [];
+    const recommendations = [];
+    
+    // Tech stack matching insights
+    if (userPreferences.primaryLanguages && userPreferences.primaryLanguages.length > 0) {
+      insights.push(`You code in ${userPreferences.primaryLanguages.join(', ')} - great for finding collaboration partners`);
+      
+      if (userPreferences.primaryLanguages.includes('JavaScript')) {
+        recommendations.push("Connect with other JS developers for code reviews");
+      }
+    }
+    
+    // Work schedule insights
+    if (userPreferences.workSchedule) {
+      const scheduleMap = {
+        'early-bird': 'morning coding sessions',
+        'night-owl': 'late night debugging sessions',
+        'nine-to-five': 'regular work hours',
+        'flexible': 'anytime coding'
+      };
+      insights.push(`Your ${scheduleMap[userPreferences.workSchedule]} schedule matches ${Math.floor(Math.random() * 30) + 20}% of your friends`);
+    }
+    
+    // Collaboration insights
+    if (userPreferences.pairProgramming) {
+      insights.push("You enjoy pair programming - perfect for collaborative projects");
+      recommendations.push("Start a pair programming session this week");
+    }
+    
+    if (userPreferences.openSource) {
+      insights.push("Open source contributor detected! 🎉");
+      recommendations.push("Share your latest open source project with friends");
+    }
+    
+    // Experience level insights
+    if (userPreferences.experienceLevel) {
+      if (userPreferences.experienceLevel === 'senior' || userPreferences.experienceLevel === 'principal') {
+        if (userPreferences.mentoring) {
+          insights.push("You're available for mentoring - helping shape the next generation of devs");
+          recommendations.push("Offer to mentor a junior developer friend");
+        } else {
+          recommendations.push("Consider mentoring - your experience is valuable");
+        }
+      } else if (userPreferences.experienceLevel === 'junior') {
+        recommendations.push("Connect with senior devs in your network for guidance");
+      }
+    }
+    
+    // Project type insights
+    if (userPreferences.projectTypes) {
+      const projectMap = {
+        'frontend': 'UI/UX enthusiast',
+        'backend': 'API architect',
+        'fullstack': 'Full-stack ninja',
+        'mobile': 'Mobile app developer'
+      };
+      insights.push(`As a ${projectMap[userPreferences.projectTypes]}, you can collaborate on diverse projects`);
+    }
+    
+    // IDE and workflow insights
+    if (userPreferences.preferredIDE === 'vim') {
+      insights.push("Vim user detected - you value efficiency and keyboard mastery");
+    } else if (userPreferences.preferredIDE === 'vscode') {
+      insights.push("VS Code user - part of the 70% majority of developers");
+    }
+    
+    // Tabs vs Spaces insight
+    if (userPreferences.tabsVsSpaces) {
+      const tabsVsSpacesJoke = userPreferences.tabsVsSpaces === 'tabs' 
+        ? "Team Tabs! May the debates be ever in your favor"
+        : "Team Spaces! The righteous path of clean code";
+      insights.push(tabsVsSpacesJoke);
+    }
+    
+    // Caffeine dependency humor
+    if (userPreferences.caffeineDependency === 'high') {
+      insights.push("☕☕☕ High caffeine dependency - a true developer!");
+    }
+    
+    // Learning goals recommendations
+    if (userPreferences.learningGoals && userPreferences.learningGoals.length > 0) {
+      const randomGoal = userPreferences.learningGoals[Math.floor(Math.random() * userPreferences.learningGoals.length)];
+      recommendations.push(`Share your ${randomGoal} learning journey with friends`);
+    }
+    
+    // Activity-based insights
+    if (friendData.totalFriends > 0) {
+      if (friendData.activeFriends > 0) {
+        const activeRate = Math.round((friendData.activeFriends / friendData.totalFriends) * 100);
+        insights.push(`You're actively chatting with ${activeRate}% of your dev network`);
+        
+        if (activeRate < 50) {
+          recommendations.push("Reach out to devs you haven't talked to - share a cool repo or article");
+        }
+      }
+    }
+    
+    // Framework specific recommendations
+    if (userPreferences.frameworks && userPreferences.frameworks.includes('React')) {
+      recommendations.push("Share a React tip or trick with your network");
+    }
+    
+    // Remote work recommendation
+    if (userPreferences.remoteWork) {
+      recommendations.push("Organize a virtual coding session with remote friends");
+    }
+    
+    // Make sure we always have some insights
+    if (insights.length === 0) {
+      insights.push("Complete your developer preferences for personalized insights");
+      insights.push("Start connecting with fellow developers");
+    }
+    
+    if (recommendations.length === 0) {
+      recommendations.push("Share a code snippet today");
+      recommendations.push("Ask for code review on your latest commit");
+    }
+    
+    console.log('Generated developer insights:', insights);
+    console.log('Generated developer recommendations:', recommendations);
+    
+    return {
+      insights: insights.slice(0, 6), // Increased from 5 to 6
+      recommendations: recommendations.slice(0, 4), // Increased from 3 to 4
+      preferences: userPreferences
+    };
+  } catch (error) {
+    console.error('Error analyzing friendships:', error);
+    return {
+      insights: [
+        "Configure your developer preferences for insights",
+        "Connect with fellow coders",
+        "Share your tech stack"
+      ],
+      recommendations: [
+        "Update your developer preferences",
+        "Join the developer community"
+      ]
+    };
   }
+}
 
   // 6. Filter Recommendations
   async recommendFilters(imageAnalysis = {}) {

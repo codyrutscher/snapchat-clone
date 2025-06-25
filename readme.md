@@ -331,3 +331,223 @@ This project is for educational purposes. Please respect Snapchat's intellectual
 - Powered by [Firebase](https://firebase.google.com/)
 - AI features by [OpenAI](https://openai.com/)
 - Inspired by Snapchat's innovative features
+
+
+# FlashChat - Connect, Share, Disappear
+
+<p align="center">
+  <img src="assets/icon.png" alt="FlashChat Logo" width="120" height="120">
+</p>
+
+<p align="center">
+  <strong>A Snapchat-inspired social messaging app with AI-powered features</strong>
+</p>
+
+<p align="center">
+  <a href="#features">Features</a> •
+  <a href="#user-stories">User Stories</a> •
+  <a href="#installation">Installation</a> •
+  <a href="#tech-stack">Tech Stack</a> •
+  <a href="#demo">Demo</a>
+</p>
+
+---
+
+## 🌟 About FlashChat
+
+FlashChat is a modern social messaging application that combines the ephemeral nature of Snapchat with cutting-edge AI features. Built with React Native and Firebase, it offers a seamless cross-platform experience for iOS, Android, and Web.
+
+## 🎯 User Stories
+
+### 1. 📸 Capture & Share Moments
+**"As a user, I want to send photos and videos that disappear after viewing, so I can share moments privately without worrying about permanent storage."**
+
+- Send photos that auto-delete after 15 seconds
+- Share videos from your gallery
+- Add filters, borders, and backgrounds to your snaps
+- Control who sees your content
+
+### 2. ✨ AI-Powered Features
+**"As a user, I want AI to help me create better content and connect with the right people, so I can have more meaningful interactions."**
+
+- Get intelligent caption suggestions based on context
+- Receive friend recommendations based on shared interests
+- Smart reply suggestions for quick responses
+- AI-powered content moderation for safety
+
+### 3. 👥 Connect with Friends
+**"As a user, I want to chat with friends individually or in groups, so I can maintain different types of social connections."**
+
+- Real-time messaging with friends
+- Create group chats with multiple participants
+- Share 24-hour stories visible to all friends
+- See when messages are read
+
+### 4. 📍 Discover Nearby
+**"As a user, I want to discover trending content and connect with people nearby, so I can expand my social circle based on location."**
+
+- View trending snaps from your area
+- Share your location on Snap Map (with privacy controls)
+- Discover content based on proximity
+- Find events and moments happening around you
+
+### 5. 🛡️ Safe & Moderated
+**"As a user, I want to feel safe while using the app, so I can enjoy social interactions without exposure to harmful content."**
+
+- AI-powered content moderation blocks inappropriate content
+- Block users who make you uncomfortable
+- Report inappropriate behavior
+- Privacy settings to control who can contact you
+
+### 6. 💖 Personalized Experience
+**"As a user, I want the app to understand my preferences, so I get recommendations that match my interests and communication style."**
+
+- Personalized posting time recommendations
+- Friendship insights and communication patterns
+- Content suggestions based on your interests
+- Adaptive AI that learns your preferences
+
+## 🚀 Features
+
+### Core Features
+- **Ephemeral Messaging**: Photos and videos that disappear after viewing
+- **Stories**: 24-hour temporary posts
+- **Real-time Chat**: Instant messaging with typing indicators
+- **Friend System**: Add friends, manage requests, block users
+- **AI Assistant**: Smart captions, replies, and insights
+- **Content Discovery**: Trending and nearby content
+- **Privacy Controls**: Comprehensive privacy settings
+
+### AI-Powered Features
+- **Smart Caption Generator**: Context-aware caption suggestions
+- **Friend Recommendations**: AI-matched friend suggestions
+- **Best Time to Post**: Engagement-based posting recommendations
+- **Friendship Insights**: Analytics about your social patterns
+- **Content Moderation**: Automatic inappropriate content detection
+
+## 🛠️ Tech Stack
+
+### Frontend
+- **React Native**: Cross-platform mobile development
+- **Expo SDK 53**: Development framework
+- **React Navigation**: App navigation
+- **Expo Camera**: Media capture
+- **Expo AV**: Video playback
+
+### Backend
+- **Firebase Auth**: User authentication
+- **Firebase Firestore**: Real-time database
+- **Firebase Storage**: Media storage
+- **Firebase Cloud Functions**: Server-side logic
+
+### AI Integration
+- **OpenAI API**: GPT-powered features
+- **Content Moderation API**: Safety features
+
+## 📱 Installation
+
+### Prerequisites
+- Node.js (v14 or higher)
+- npm or yarn
+- Expo CLI (`npm install -g expo-cli`)
+- iOS Simulator (Mac only) or Android Emulator
+
+### Setup Steps
+
+1. **Clone the repository**
+```bash
+git clone https://github.com/yourusername/flashchat.git
+cd flashchat
+```
+
+2. **Install dependencies**
+```bash
+npm install
+# or
+yarn install
+```
+
+3. **Set up environment variables**
+Create a `.env` file in the root directory:
+```env
+OPENAI_API_KEY=your_openai_api_key
+```
+
+4. **Update Firebase configuration**
+Replace the Firebase config in `firebase.js` with your own Firebase project credentials.
+
+5. **Start the development server**
+```bash
+expo start
+```
+
+6. **Run on your device**
+- Press `i` for iOS simulator
+- Press `a` for Android emulator
+- Scan QR code with Expo Go app on your phone
+
+## 🔧 Configuration
+
+### Firebase Setup
+1. Create a new Firebase project
+2. Enable Authentication (Email/Password)
+3. Create a Firestore database
+4. Enable Storage
+5. Copy your config to `firebase.js`
+
+### OpenAI Setup
+1. Get an API key from OpenAI
+2. Add it to your environment variables
+3. Update `config.js` with your key
+
+## 📸 Screenshots
+
+<p align="center">
+  <img src="screenshots/login.png" alt="Login Screen" width="250">
+  <img src="screenshots/camera.png" alt="Camera Screen" width="250">
+  <img src="screenshots/chat.png" alt="Chat Screen" width="250">
+</p>
+
+## 🎥 Demo
+
+[Watch the 5-minute demo video](#) showcasing:
+- Account creation and login
+- Sending ephemeral messages
+- AI-powered caption suggestions
+- Friend recommendations
+- Content moderation in action
+- Story creation and viewing
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
+
+### Development Workflow
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- Inspired by Snapchat's ephemeral messaging concept
+- OpenAI for powering our AI features
+- The React Native and Expo communities
+- All contributors who have helped shape FlashChat
+
+## 📞 Contact
+
+- **Project Link**: [https://github.com/yourusername/flashchat](https://github.com/yourusername/flashchat)
+- **Issues**: [GitHub Issues](https://github.com/yourusername/flashchat/issues)
+- **Email**: support@flashchat.app
+
+---
+
+<p align="center">
+  Made with ❤️ by the FlashChat Team
+</p>

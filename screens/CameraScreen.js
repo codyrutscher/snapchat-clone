@@ -30,6 +30,7 @@ import { CaptionSuggestions } from '../components/AIAssistant';
 import OpenAIService from '../services/OpenAIService';
 import ContentModerationService from '../services/ContentModerationService';
 import TrendingService from '../services/TrendingService';
+import SubscriptionService from '../services/SubscriptionService';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -259,6 +260,22 @@ export default function CameraScreen({ navigation }) {
     setUploading(true);
     
     try {
+      // Check subscription limits
+      const canSend = await SubscriptionService.canSendContent(sendAsStory ? 'story' : 'snap');
+      
+      if (!canSend) {
+        Alert.alert(
+          'Limit Reached', 
+          'You\'ve reached your monthly limit. Upgrade to DevChat Pro for unlimited content!',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Upgrade', onPress: () => navigation.navigate('Profile') }
+          ]
+        );
+        setUploading(false);
+        return;
+      }
+
       // Moderate caption if present
       if (snapText) {
         const moderationResult = await ContentModerationService.moderateText(snapText);
@@ -311,21 +328,21 @@ export default function CameraScreen({ navigation }) {
       const dbEntries = [];
       
       if (sendAsStory) {
-  dbEntries.push({
-    userId: auth.currentUser.uid,
-    username: auth.currentUser.displayName || 'Anonymous',
-    timestamp: timestamp,
-    expiresAt: expiresAt,
-    type: 'story',
-    metadata: snapMetadata,
-    location: location,
-    // Add these fields for trending
-    views: 0,
-    likes: 0,
-    shares: 0,
-    public: true // Make stories public for discovery
-  });
-}
+        dbEntries.push({
+          userId: auth.currentUser.uid,
+          username: auth.currentUser.displayName || 'Anonymous',
+          timestamp: timestamp,
+          expiresAt: expiresAt,
+          type: 'story',
+          metadata: snapMetadata,
+          location: location,
+          // Add these fields for trending
+          views: 0,
+          likes: 0,
+          shares: 0,
+          public: true // Make stories public for discovery
+        });
+      }
 
       selectedFriends.forEach(friendId => {
         dbEntries.push({
@@ -350,6 +367,9 @@ export default function CameraScreen({ navigation }) {
       );
 
       await Promise.all(savePromises);
+      
+      // Increment content count after successful upload
+      await SubscriptionService.incrementContentCount(sendAsStory ? 'story' : 'snap');
       
       // Track user behavior for story posts
       if (sendAsStory) {

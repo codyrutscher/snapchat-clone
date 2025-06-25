@@ -68,17 +68,17 @@ export default function SnapRenderer({ imageUrl, metadata, style, imageStyle, co
         </View>
       )}
      <View style={[styles.imageWrapper, getBorderStyle(), style]}>
-        {metadata?.mediaType === 'video' ? (
-          <Video
-            source={{ uri: imageUrl }}
-            style={[styles.image, getFilterStyle(), imageStyle]}
-            shouldPlay
-            isLooping
-            resizeMode="contain"
-            isMuted={false}
-            volume={0.5}
-          />
-        ) : (
+       {metadata?.mediaType === 'video' ? (
+  <Video
+    source={{ uri: imageUrl }}
+    style={[styles.image, getFilterStyle(), imageStyle]}
+    shouldPlay={false}  // Changed from true to false
+    isLooping={false}   // Changed from true to false
+    resizeMode="contain"
+    isMuted={true}      // Changed to true by default
+    volume={0.5}
+  />
+) : (
           <Image 
             source={{ uri: imageUrl }} 
             style={[styles.image, getFilterStyle(), imageStyle]}

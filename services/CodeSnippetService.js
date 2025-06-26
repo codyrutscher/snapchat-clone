@@ -1,13 +1,219 @@
 import { collection, query, where, orderBy, limit, getDocs, doc, getDoc, addDoc, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import OpenAIService from './OpenAIService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 class CodeSnippetService {
   constructor() {
     this.userCodePatterns = {};
     this.friendInteractions = {};
+    this.snippets = {};
+    this.fileTypes = [
+      { id: 'javascript', name: 'JavaScript', extension: '.js', icon: 'logo-javascript', defaultContent: '// JavaScript snippet\nfunction hello() {\n  console.log("Hello, World!");\n}\n\nhello();' },
+      { id: 'python', name: 'Python', extension: '.py', icon: 'logo-python', defaultContent: '# Python snippet\ndef hello():\n    print("Hello, World!")\n\nhello()' },
+      { id: 'java', name: 'Java', extension: '.java', icon: 'cafe', defaultContent: '// Java snippet\npublic class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello, World!");\n    }\n}' },
+      { id: 'cpp', name: 'C++', extension: '.cpp', icon: 'code-slash', defaultContent: '// C++ snippet\n#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << "Hello, World!" << endl;\n    return 0;\n}' },
+      { id: 'html', name: 'HTML', extension: '.html', icon: 'globe', defaultContent: '<!DOCTYPE html>\n<html>\n<head>\n    <title>My Snippet</title>\n</head>\n<body>\n    <h1>Hello, World!</h1>\n</body>\n</html>' },
+      { id: 'css', name: 'CSS', extension: '.css', icon: 'color-palette', defaultContent: '/* CSS snippet */\nbody {\n    font-family: Arial, sans-serif;\n    background-color: #f0f0f0;\n    color: #333;\n}' },
+      { id: 'typescript', name: 'TypeScript', extension: '.ts', icon: 'logo-javascript', defaultContent: '// TypeScript snippet\ninterface Person {\n    name: string;\n    age: number;\n}\n\nfunction greet(person: Person): void {\n    console.log(`Hello, ${person.name}!`);\n}' },
+      { id: 'react', name: 'React JSX', extension: '.jsx', icon: 'logo-react', defaultContent: '// React component\nimport React, { useState } from \'react\';\n\nfunction Counter() {\n    const [count, setCount] = useState(0);\n    \n    return (\n        <div>\n            <h1>Count: {count}</h1>\n            <button onClick={() => setCount(count + 1)}>+</button>\n        </div>\n    );\n}\n\nexport default Counter;' },
+      { id: 'sql', name: 'SQL', extension: '.sql', icon: 'server', defaultContent: '-- SQL snippet\nSELECT \n    users.name,\n    COUNT(orders.id) as order_count\nFROM users\nLEFT JOIN orders ON users.id = orders.user_id\nGROUP BY users.id\nORDER BY order_count DESC;' },
+      { id: 'go', name: 'Go', extension: '.go', icon: 'logo-google', defaultContent: '// Go snippet\npackage main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Hello, World!")\n}' },
+      { id: 'rust', name: 'Rust', extension: '.rs', icon: 'construct', defaultContent: '// Rust snippet\nfn main() {\n    println!("Hello, World!");\n}' },
+      { id: 'swift', name: 'Swift', extension: '.swift', icon: 'logo-apple', defaultContent: '// Swift snippet\nimport Swift\n\nfunc greet(name: String) {\n    print("Hello, \\(name)!")\n}\n\ngreet(name: "World")' }
+    ];
   }
 
+
+  // Initialize snippets from local storage
+  async initialize() {
+    try {
+      const savedSnippets = await AsyncStorage.getItem('codeSnippets');
+      if (savedSnippets) {
+        this.snippets = JSON.parse(savedSnippets);
+      }
+    } catch (error) {
+      console.error('Error loading snippets:', error);
+    }
+  }
+
+  // Create a new snippet
+  async createSnippet(title, language, content) {
+    const snippetId = `snippet_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const fileType = this.fileTypes.find(ft => ft.id === language) || this.fileTypes[0];
+    
+    const snippet = {
+      id: snippetId,
+      title: title || `Untitled ${fileType.name} Snippet`,
+      language: language,
+      fileType: fileType,
+      content: content || fileType.defaultContent,
+      createdAt: new Date().toISOString(),
+      lastModified: new Date().toISOString(),
+      owner: auth.currentUser?.uid,
+      ownerName: auth.currentUser?.displayName || 'Anonymous',
+      likes: 0,
+      views: 0,
+      shares: 0
+    };
+
+    this.snippets[snippetId] = snippet;
+    await this.saveSnippets();
+    
+    return snippet;
+  }
+
+  // Update snippet content
+  async updateSnippet(snippetId, content) {
+    if (!this.snippets[snippetId]) {
+      throw new Error('Snippet not found');
+    }
+
+    this.snippets[snippetId].content = content;
+    this.snippets[snippetId].lastModified = new Date().toISOString();
+    await this.saveSnippets();
+  }
+
+  // Delete a snippet
+  async deleteSnippet(snippetId) {
+    delete this.snippets[snippetId];
+    await this.saveSnippets();
+  }
+
+  // Get a single snippet
+  async getSnippet(snippetId) {
+    return this.snippets[snippetId];
+  }
+
+  // Get all user snippets
+  async getAllSnippets() {
+    return Object.values(this.snippets).sort((a, b) => 
+      new Date(b.lastModified) - new Date(a.lastModified)
+    );
+  }
+
+  // Save snippets to local storage
+  async saveSnippets() {
+    try {
+      await AsyncStorage.setItem('codeSnippets', JSON.stringify(this.snippets));
+    } catch (error) {
+      console.error('Error saving snippets:', error);
+    }
+  }
+
+  // Share snippet to discover or story
+  async shareSnippet(snippetId, shareType = 'story') {
+    const snippet = this.snippets[snippetId];
+    if (!snippet) throw new Error('Snippet not found');
+
+    try {
+      const shareData = {
+        ...snippet,
+        sharedAt: new Date().toISOString(),
+        shareType: shareType,
+        public: true
+      };
+
+      if (shareType === 'discover') {
+        await addDoc(collection(db, 'sharedSnippets'), shareData);
+      } else if (shareType === 'story') {
+        await addDoc(collection(db, 'snaps'), {
+          userId: auth.currentUser?.uid,
+          username: auth.currentUser?.displayName || 'Developer',
+          timestamp: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          type: 'story',
+          contentType: 'code',
+          codeData: shareData,
+          public: true
+        });
+      }
+
+      // Update share count
+      snippet.shares = (snippet.shares || 0) + 1;
+      await this.saveSnippets();
+
+      // Track sharing for recommendations
+      await this.trackCodeSharing({
+        snippetId,
+        language: snippet.language,
+        sharedWith: shareType === 'discover' ? ['public'] : []
+      });
+
+      return shareData;
+    } catch (error) {
+      console.error('Error sharing snippet:', error);
+      throw error;
+    }
+  }
+
+  // Get snippets from discover
+  async getDiscoverSnippets() {
+    try {
+      const q = query(
+        collection(db, 'sharedSnippets'),
+        where('public', '==', true),
+        orderBy('sharedAt', 'desc'),
+        limit(50)
+      );
+
+      const snapshot = await getDocs(q);
+      const snippets = [];
+      
+      snapshot.forEach(doc => {
+        snippets.push({
+          id: doc.id,
+          ...doc.data()
+        });
+      });
+
+      return snippets;
+    } catch (error) {
+      console.error('Error loading discover snippets:', error);
+      return [];
+    }
+  }
+
+  // Import snippet from discover
+  async importSnippet(sharedSnippetId) {
+    try {
+      const docRef = doc(db, 'sharedSnippets', sharedSnippetId);
+      const docSnap = await getDoc(docRef);
+      
+      if (!docSnap.exists()) {
+        throw new Error('Shared snippet not found');
+      }
+
+      const sharedData = docSnap.data();
+      
+      // Create a copy
+      const imported = await this.createSnippet(
+        `${sharedData.title} (Copy)`,
+        sharedData.language,
+        sharedData.content
+      );
+
+      // Update view count
+      await updateDoc(docRef, {
+        views: (sharedData.views || 0) + 1
+      });
+
+      return imported;
+    } catch (error) {
+      console.error('Error importing snippet:', error);
+      throw error;
+    }
+  }
+
+  // Get file types
+  getFileTypes() {
+    return this.fileTypes;
+  }
+
+  // Get file type by ID
+  getFileTypeById(id) {
+    return this.fileTypes.find(ft => ft.id === id) || this.fileTypes[0];
+  }
 
   // Add to CodeSnippetService.js after the constructor
   

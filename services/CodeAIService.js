@@ -9,6 +9,136 @@ class CodeAIService {
     });
   }
 
+  async generateSnippet(prompt, language = 'javascript', userContext = {}) {
+    try {
+      // Get user's code patterns and preferences for RAG
+      const userPatterns = await this.getUserCodePatterns();
+      const friendPatterns = await this.getFriendCodePatterns();
+      
+      const systemPrompt = `You are an expert ${language} developer who understands the user's coding style and preferences.
+
+User Context:
+- Preferred languages: ${userPatterns.languages.join(', ')}
+- Coding style: ${userPatterns.style}
+- Common patterns: ${userPatterns.patterns.join(', ')}
+- Friend preferences: ${friendPatterns.popularLanguages.join(', ')}
+
+Generate clean, well-commented ${language} code that matches the user's style and the prompt.
+Return ONLY the code without any markdown formatting or explanations.`;
+
+      const userPrompt = `Generate ${language} code for: ${prompt}
+
+Consider the user's coding patterns and what their friends typically share.
+Make the code practical, reusable, and following best practices.`;
+
+      const completion = await this.openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 1500
+      });
+
+      return completion.choices[0].message.content.trim();
+    } catch (error) {
+      console.error('Error generating snippet:', error);
+      // Fallback to basic generation
+      return this.getDefaultSnippet(language);
+    }
+  }
+
+  async getUserCodePatterns() {
+    try {
+      const userId = auth.currentUser?.uid;
+      if (!userId) return { languages: ['javascript'], style: 'modern', patterns: [] };
+      
+      // Get user's recent code shares
+      const q = query(
+        collection(db, 'codeSharing'),
+        where('userId', '==', userId),
+        orderBy('timestamp', 'desc'),
+        limit(20)
+      );
+      
+      const snapshot = await getDocs(q);
+      const languages = {};
+      const patterns = [];
+      
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        languages[data.language] = (languages[data.language] || 0) + 1;
+      });
+      
+      const topLanguages = Object.entries(languages)
+        .sort((a, b) => b[1] - a[1])
+        .map(([lang]) => lang);
+      
+      return {
+        languages: topLanguages.length > 0 ? topLanguages : ['javascript'],
+        style: 'modern',
+        patterns: ['functional', 'async-await', 'hooks']
+      };
+    } catch (error) {
+      console.error('Error getting user patterns:', error);
+      return { languages: ['javascript'], style: 'modern', patterns: [] };
+    }
+  }
+
+  async getFriendCodePatterns() {
+    try {
+      const userId = auth.currentUser?.uid;
+      if (!userId) return { popularLanguages: ['javascript'] };
+      
+      // Get user's friends
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      const friends = userDoc.data()?.friends || [];
+      
+      if (friends.length === 0) return { popularLanguages: ['javascript'] };
+      
+      // Get friends' recent shares
+      const languages = {};
+      
+      for (const friendId of friends.slice(0, 10)) {
+        const q = query(
+          collection(db, 'codeSharing'),
+          where('userId', '==', friendId),
+          orderBy('timestamp', 'desc'),
+          limit(5)
+        );
+        
+        const snapshot = await getDocs(q);
+        snapshot.forEach(doc => {
+          const lang = doc.data().language;
+          languages[lang] = (languages[lang] || 0) + 1;
+        });
+      }
+      
+      const popularLanguages = Object.entries(languages)
+        .sort((a, b) => b[1] - a[1])
+        .map(([lang]) => lang)
+        .slice(0, 3);
+      
+      return {
+        popularLanguages: popularLanguages.length > 0 ? popularLanguages : ['javascript']
+      };
+    } catch (error) {
+      console.error('Error getting friend patterns:', error);
+      return { popularLanguages: ['javascript'] };
+    }
+  }
+
+  getDefaultSnippet(language) {
+    const defaults = {
+      javascript: '// JavaScript function\nfunction processData(data) {\n  return data.map(item => ({\n    ...item,\n    processed: true,\n    timestamp: new Date().toISOString()\n  }));\n}',
+      python: '# Python function\ndef process_data(data):\n    """Process data and add metadata"""\n    return [{\n        **item,\n        "processed": True,\n        "timestamp": datetime.now().isoformat()\n    } for item in data]',
+      java: '// Java method\npublic List<Data> processData(List<Data> dataList) {\n    return dataList.stream()\n        .map(item -> item.withProcessed(true)\n            .withTimestamp(Instant.now()))\n        .collect(Collectors.toList());\n}'
+    };
+    
+    return defaults[language] || `// ${language} code\n// Generated snippet`;
+  }
+
   async generateReactApp(prompt, existingFiles = {}) {
     try {
       const systemPrompt = `You are an expert React developer. Generate a complete, working React application.

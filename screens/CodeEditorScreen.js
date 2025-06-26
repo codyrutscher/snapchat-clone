@@ -63,6 +63,7 @@ export default function CodeEditorScreen({ navigation, route }) {
   const [previewHtml, setPreviewHtml] = useState('');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState('');
   
   // Deployment state
   const [showDeployModal, setShowDeployModal] = useState(false);
@@ -365,166 +366,140 @@ export default function CodeEditorScreen({ navigation, route }) {
     }
   };
 
-  const generatePreview = () => {
-    if (!currentProject) return;
+  // Replace the generatePreview function in CodeEditorScreen.js with this version:
 
-    setPreviewLoading(true);
-    setPreviewError(null);
+const generatePreview = async () => {
+  if (!currentProject) {
+    Alert.alert('Error', 'No project selected');
+    return;
+  }
+
+  setPreviewLoading(true);
+  setPreviewError(null);
+  
+  try {
+    // Save any unsaved changes first
+    if (unsavedChanges) {
+      await saveCurrentFile();
+    }
     
-    try {
-      // Save any unsaved changes first
-      if (unsavedChanges) {
-        saveCurrentFile();
-      }
-      
-      // Get the latest project data
-      const project = currentProject;
-      
-      // Process all JavaScript files to handle imports
-      let combinedJS = '';
-      const processedFiles = new Set();
-      
-      // Helper function to extract component name from file path
-      const getComponentName = (filePath) => {
-        const fileName = filePath.split('/').pop().replace('.js', '').replace('.jsx', '');
-        return fileName;
-      };
-      
-      // Process all component files first
-      Object.entries(project.files).forEach(([filePath, file]) => {
-        if ((filePath.endsWith('.js') || filePath.endsWith('.jsx')) && 
-            filePath !== 'src/App.js' && 
-            filePath.includes('src/')) {
-          const componentName = getComponentName(filePath);
-          // Remove import statements and export statements
-          let cleanedContent = file.content
-            .replace(/import\s+.*?from\s+['"].*?['"];?\s*/g, '')
-            .replace(/export\s+default\s+/g, '')
-            .replace(/export\s+{\s*.*?\s*};?\s*/g, '')
-            .replace(/export\s+/g, '');
-          
-          combinedJS += `\n// ${filePath}\n${cleanedContent}\n`;
-          processedFiles.add(filePath);
-        }
-      });
-      
-      // Add utilities and services
-      Object.entries(project.files).forEach(([filePath, file]) => {
-        if ((filePath.includes('utils/') || filePath.includes('services/')) && 
-            filePath.endsWith('.js')) {
-          let cleanedContent = file.content
-            .replace(/import\s+.*?from\s+['"].*?['"];?\s*/g, '')
-            .replace(/export\s+default\s+/g, '')
-            .replace(/export\s+{\s*.*?\s*};?\s*/g, '')
-            .replace(/export\s+const\s+/g, 'const ')
-            .replace(/export\s+function\s+/g, 'function ')
-            .replace(/export\s+/g, '');
-          
-          combinedJS = `\n// ${filePath}\n${cleanedContent}\n` + combinedJS;
-        }
-      });
-      
-      // Process App.js last
-      let appJS = project.files['src/App.js']?.content || '';
-      appJS = appJS
+    // Generate the HTML locally
+    const html = generateLocalPreviewHtml(currentProject);
+    
+    // For WebView, we need to use the html source directly, not a data URL
+    setPreviewHtml(html);
+    setShowPreview(true);
+    
+  } catch (error) {
+    console.error('Preview generation error:', error);
+    setPreviewError(error.message);
+    Alert.alert('Preview Error', 'Failed to generate preview: ' + error.message);
+  } finally {
+    setPreviewLoading(false);
+  }
+};
+
+// Add this helper function after generatePreview:
+const generateLocalPreviewHtml = (project) => {
+  // Get all JavaScript content
+  let jsContent = '';
+  
+  // Process components and utilities first
+  Object.entries(project.files).forEach(([filePath, file]) => {
+    if (filePath.endsWith('.js') && filePath !== 'src/App.js') {
+      const content = file.content || '';
+      // Remove imports and exports
+      const cleanContent = content
         .replace(/import\s+.*?from\s+['"].*?['"];?\s*/g, '')
-        .replace(/export\s+default\s+App;?\s*/g, '');
+        .replace(/export\s+(default\s+)?/g, '');
       
-      // Combine all JavaScript
-      const finalJS = combinedJS + '\n' + appJS;
-      
-      // Generate HTML with all necessary React setup
-      const html = `
-<!DOCTYPE html>
-<html>
+      jsContent += `\n// ${filePath}\n${cleanContent}\n`;
+    }
+  });
+  
+  // Add App.js last
+  const appContent = project.files['src/App.js']?.content || 'function App() { return React.createElement("div", null, "Hello World"); }';
+  const cleanAppContent = appContent
+    .replace(/import\s+.*?from\s+['"].*?['"];?\s*/g, '')
+    .replace(/export\s+(default\s+)?/g, '');
+  
+  jsContent += `\n// src/App.js\n${cleanAppContent}\n`;
+  
+  // Get all CSS
+  let cssContent = '';
+  Object.entries(project.files).forEach(([filePath, file]) => {
+    if (filePath.endsWith('.css')) {
+      cssContent += `\n/* ${filePath} */\n${file.content || ''}\n`;
+    }
+  });
+  
+  // Generate HTML
+  return `<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${project.name}</title>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <style>
-    * {
-      box-sizing: border-box;
-    }
-    body { 
-      margin: 0; 
-      padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
-    }
-    #root {
-      width: 100%;
-      min-height: 100vh;
-    }
-    #error-display {
-      color: red;
-      padding: 20px;
-      white-space: pre-wrap;
-      font-family: monospace;
-    }
-    ${project.files['src/App.css']?.content || ''}
-    ${project.files['src/index.css']?.content || ''}
-    ${Object.entries(project.files)
-      .filter(([path]) => path.endsWith('.css') && path !== 'src/App.css' && path !== 'src/index.css')
-      .map(([path, file]) => `/* ${path} */\n${file.content}`)
-      .join('\n')}
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${project.name} - Preview</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        #root {
+            min-height: 100vh;
+        }
+        #error-display {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #ff6b6b;
+            color: white;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            display: none;
+        }
+        ${cssContent}
+    </style>
 </head>
 <body>
-  <div id="root"></div>
-  <div id="error-display" style="display: none;"></div>
-  <script type="text/babel">
-    // Redirect console for debugging
-    const errorDisplay = document.getElementById('error-display');
-    const originalLog = console.log;
-    const originalError = console.error;
-    
-    console.log = (...args) => {
-      originalLog(...args);
-      window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'log', data: args }));
-    };
-    
-    console.error = (...args) => {
-      originalError(...args);
-      errorDisplay.style.display = 'block';
-      errorDisplay.textContent += args.join(' ') + '\\n';
-      window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'error', data: args }));
-    };
-
-    try {
-      // Combined JavaScript from all files
-      ${finalJS}
-      
-      // Check if App is defined
-      if (typeof App === 'undefined') {
-        throw new Error('App component is not defined. Make sure your App.js exports a component.');
-      }
-      
-      // Render the app
-      const root = ReactDOM.createRoot(document.getElementById('root'));
-      root.render(React.createElement(App));
-      
-      console.log('App rendered successfully with ${Object.keys(project.files).length} files');
-    } catch (error) {
-      console.error('Render error:', error);
-      errorDisplay.style.display = 'block';
-      errorDisplay.textContent = 'Error: ' + error.message + '\\n' + error.stack;
-    }
-  </script>
+    <div id="root"></div>
+    <div id="error-display"></div>
+    <script type="text/babel">
+        // Error handling
+        window.addEventListener('error', function(e) {
+            const errorDisplay = document.getElementById('error-display');
+            errorDisplay.style.display = 'block';
+            errorDisplay.textContent = e.message + ' (Line: ' + e.lineno + ')';
+        });
+        
+        try {
+            ${jsContent}
+            
+            // Check if App is defined
+            if (typeof App === 'undefined') {
+                throw new Error('App component is not defined. Make sure App.js exports a component.');
+            }
+            
+            // Render the app
+            const root = ReactDOM.createRoot(document.getElementById('root'));
+            root.render(React.createElement(App));
+        } catch (error) {
+            const errorDisplay = document.getElementById('error-display');
+            errorDisplay.style.display = 'block';
+            errorDisplay.textContent = 'Error: ' + error.message;
+        }
+    </script>
 </body>
 </html>`;
-
-      setPreviewHtml(html);
-      setShowPreview(true);
-    } catch (error) {
-      console.error('Preview generation error:', error);
-      setPreviewError(error.message);
-      Alert.alert('Preview Error', 'Failed to generate preview: ' + error.message);
-    } finally {
-      setPreviewLoading(false);
-    }
-  };
+};
 
   const deployProject = async () => {
     if (!currentProject) return;
@@ -1061,11 +1036,16 @@ export default function CodeEditorScreen({ navigation, route }) {
         </TouchableOpacity>
       </Modal>
 
-      {/* Preview Modal */}
+      {/* Preview Modal - Simplified */}
       <Modal
         visible={showPreview}
         animationType="slide"
-        onRequestClose={() => setShowPreview(false)}
+        presentationStyle="fullScreen"
+        onRequestClose={() => {
+          setShowPreview(false);
+          setPreviewUrl('');
+          setPreviewError(null);
+        }}
       >
         <View style={styles.previewContainer}>
           <View style={styles.previewHeader}>
@@ -1079,21 +1059,34 @@ export default function CodeEditorScreen({ navigation, route }) {
               </TouchableOpacity>
               <TouchableOpacity 
                 style={styles.previewActionButton}
-                onPress={() => setShowDeployModal(true)}
+                onPress={() => {
+                  setShowDeployModal(true);
+                  setShowPreview(false);
+                }}
               >
                 <Ionicons name="cloud-upload" size={20} color={Colors.primary} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setShowPreview(false)}>
+              <TouchableOpacity 
+                onPress={() => {
+                  setShowPreview(false);
+                  setPreviewUrl('');
+                  setPreviewError(null);
+                }}
+                style={styles.closeButton}
+              >
                 <Ionicons name="close" size={24} color={Colors.black} />
               </TouchableOpacity>
             </View>
           </View>
-          {previewLoading ? (
+          
+          {previewLoading && (
             <View style={styles.previewLoading}>
               <ActivityIndicator size="large" color={Colors.primary} />
-              <Text style={styles.previewLoadingText}>Loading preview...</Text>
+              <Text style={styles.previewLoadingText}>Deploying preview...</Text>
             </View>
-          ) : previewError ? (
+          )}
+          
+          {!previewLoading && previewError && (
             <View style={styles.previewError}>
               <Ionicons name="alert-circle" size={60} color={Colors.danger} />
               <Text style={styles.previewErrorText}>Preview Error</Text>
@@ -1102,32 +1095,34 @@ export default function CodeEditorScreen({ navigation, route }) {
                 <Text style={styles.retryButtonText}>Try Again</Text>
               </TouchableOpacity>
             </View>
-          ) : (
+          )}
+          
+          {!previewLoading && !previewError && previewUrl && (
             <WebView
-              source={{ html: previewHtml }}
+              source={{ uri: previewUrl }}
               style={styles.webView}
-              javaScriptEnabled={true}
-              domStorageEnabled={true}
-              originWhitelist={['*']}
-              mixedContentMode="always"
+              startInLoadingState={true}
+              renderLoading={() => (
+                <View style={styles.webViewLoading}>
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                </View>
+              )}
               onError={(syntheticEvent) => {
                 const { nativeEvent } = syntheticEvent;
-                console.warn('WebView error: ', nativeEvent);
+                console.error('WebView error: ', nativeEvent);
                 setPreviewError(nativeEvent.description || 'Failed to load preview');
               }}
-              onMessage={(event) => {
-                try {
-                  const message = JSON.parse(event.nativeEvent.data);
-                  console.log(`Preview ${message.type}:`, message.data);
-                } catch (e) {
-                  console.log('WebView message:', event.nativeEvent.data);
-                }
-              }}
-              injectedJavaScript={`
-                console.log('WebView loaded successfully');
-                true;
-              `}
             />
+          )}
+          
+          {!previewLoading && !previewError && !previewUrl && (
+            <View style={styles.previewError}>
+              <Text style={styles.previewErrorText}>No preview available</Text>
+              <Text style={styles.previewErrorDetail}>Deploy your app first to see a preview</Text>
+              <TouchableOpacity style={styles.retryButton} onPress={() => setShowDeployModal(true)}>
+                <Text style={styles.retryButtonText}>Deploy Now</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
       </Modal>
@@ -1680,6 +1675,17 @@ const styles = StyleSheet.create({
   },
   webView: {
     flex: 1,
+    backgroundColor: '#f0f0f0',
+  },
+  webViewLoading: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    marginLeft: -20,
+    marginTop: -20,
+  },
+  closeButton: {
+    padding: 5,
   },
   previewError: {
     flex: 1,

@@ -107,58 +107,97 @@ class OpenAIService {
     }
   }
 
-  async analyzeRecentConversations() {
-    try {
-      const chatsQuery = query(
-        collection(db, 'chats'),
-        where('participants', 'array-contains', auth.currentUser.uid)
-      );
+
+async generateFullApp({ prompt, projectType, existingFiles }) {
+  if (!this.openai) {
+    return this.getFallbackApp(projectType);
+  }
+
+  try {
+    let systemPrompt = '';
+    let userPrompt = '';
+
+    if (projectType === 'react') {
+      systemPrompt = `You are an expert React developer. Create a complete, working React application.
       
-      const snapshot = await getDocs(chatsQuery);
-      const recentTopics = [];
-      const conversationTones = [];
-      const activeConversations = [];
-      
-      for (const chatDoc of snapshot.docs) {
-        const messagesQuery = query(
-          collection(db, 'chats', chatDoc.id, 'messages'),
-          orderBy('timestamp', 'desc'),
-          limit(20)
-        );
-        
-        const messagesSnapshot = await getDocs(messagesQuery);
-        const messages = messagesSnapshot.docs.map(doc => doc.data());
-        
-        // Extract topics and tone
-        messages.forEach(msg => {
-          if (msg.text) {
-            // Simple topic extraction (you could enhance this)
-            if (msg.text.length > 20) {
-              recentTopics.push(msg.text.substring(0, 50));
-            }
-          }
-        });
-        
-        if (messages.length > 0) {
-          const chatData = chatDoc.data();
-          activeConversations.push({
-            participantName: this.getOtherParticipantName(chatData, auth.currentUser.uid),
-            lastActivity: messages[0].timestamp,
-            messageCount: messages.length
-          });
+      You must return ONLY a valid JSON object with this exact structure:
+      {
+        "name": "App Name",
+        "type": "react",
+        "files": {
+          "App.js": "// Complete React component code here",
+          "styles.css": "/* Complete CSS styles here */"
         }
       }
       
-      return {
-        recentTopics: recentTopics.slice(0, 5),
-        activeConversations: activeConversations.slice(0, 3),
-        totalConversations: snapshot.size
-      };
-    } catch (error) {
-      console.error('Error analyzing conversations:', error);
-      return {};
+      Requirements:
+      - App.js must be a complete, functional React component
+      - Use functional components with hooks
+      - Include all necessary imports
+      - Make it interactive and visually appealing
+      - Add proper error handling
+      - Include responsive CSS in styles.css`;
+
+      userPrompt = `Create a React app: ${prompt}. Return ONLY the JSON object, no explanations.`;
+    } else if (projectType === 'vanilla') {
+      systemPrompt = `You are an expert web developer. Create a complete, working vanilla JavaScript application.
+      
+      You must return ONLY a valid JSON object with this exact structure:
+      {
+        "name": "App Name",
+        "type": "vanilla",
+        "files": {
+          "index.html": "<!-- Complete HTML here -->",
+          "script.js": "// Complete JavaScript here",
+          "styles.css": "/* Complete CSS here */"
+        }
+      }
+      
+      Requirements:
+      - Create a complete, interactive web application
+      - HTML should have proper structure
+      - JavaScript should be modern and clean
+      - CSS should make it visually appealing
+      - Make it responsive`;
+
+      userPrompt = `Create a web app: ${prompt}. Return ONLY the JSON object, no explanations.`;
     }
+
+    const completion = await this.openai.chat.completions.create({
+      model: "gpt-4", // Use GPT-4 for better results
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      temperature: 0.7,
+      max_tokens: 4000 // Increase token limit for complete apps
+    });
+
+    const response = completion.choices[0].message.content;
+    console.log('AI Response:', response);
+
+    try {
+      // Clean the response to ensure valid JSON
+      const cleanedResponse = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const appData = JSON.parse(cleanedResponse);
+      
+      // Validate the response has required structure
+      if (!appData.files || Object.keys(appData.files).length === 0) {
+        throw new Error('Invalid app structure');
+      }
+      
+      return appData;
+    } catch (parseError) {
+      console.error('Parse error:', parseError);
+      // Try to extract code from the response
+      return this.extractAppFromResponse(response, projectType);
+    }
+  } catch (error) {
+    console.error('Error generating app:', error);
+    return this.getFallbackApp(projectType);
   }
+}
+  
 
   async analyzeSnapHistory() {
     try {

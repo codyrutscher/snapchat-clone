@@ -116,16 +116,16 @@ function MainTabs() {
         }}
       />
 
-         <Tab.Screen 
-        name="Code" 
-        component={CodeEditorScreen}
-        options={{
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="code-slash-outline" size={size} color={color} />
-          ),
-          headerShown: false,
-        }}
-      />
+        <Tab.Screen 
+  name="Code" 
+  component={CodeEditorScreen}
+  options={{
+    tabBarIcon: ({ color, size }) => (
+      <Ionicons name="code-slash-outline" size={size} color={color} />
+    ),
+    headerShown: false,
+  }}
+/>
       <Tab.Screen 
   name="Discover" 
   component={DiscoverScreen}

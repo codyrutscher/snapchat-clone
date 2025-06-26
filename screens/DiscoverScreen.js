@@ -444,6 +444,15 @@ export default function DiscoverScreen({ navigation }) {
             <Ionicons name="chevron-down" size={16} color={Colors.primary} />
           </TouchableOpacity>
         )}
+
+        // Add to the tabs
+<TouchableOpacity
+  style={[styles.tab, activeTab === 'apps' && styles.activeTab]}
+  onPress={() => setActiveTab('apps')}
+>
+  <Ionicons name="apps" size={20} color={activeTab === 'apps' ? Colors.primary : Colors.gray} />
+  <Text style={[styles.tabText, activeTab === 'apps' && styles.activeTabText]}>Apps</Text>
+</TouchableOpacity>
       </View>
 
       {loading ? (

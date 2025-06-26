@@ -2,582 +2,950 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   ScrollView,
   StyleSheet,
   Modal,
+  TextInput,
   FlatList,
   Alert,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator
+  ActivityIndicator,
+  Dimensions,
+  Share
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/Colors';
-import * as Clipboard from 'expo-clipboard';
+import { WebView } from 'react-native-webview';
+import VirtualFileSystem from '../services/VirtualFileSystem';
+import CodeAIService from '../services/CodeAIService';
+import AppDeployService from '../services/AppStoreService';
+import Terminal from '../components/Terminal';
+import TerminalService from '../services/TerminalService';
 import { auth, db } from '../firebase';
-import { collection, addDoc, doc, updateDoc, getDoc, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
-import OpenAIService from '../services/OpenAIService';
-import SubscriptionService from '../services/SubscriptionService';
-import CodeSnippetService from '../services/CodeSnippetService';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 
-const LANGUAGES = [
-  { id: 'javascript', name: 'JavaScript', extension: '.js' },
-  { id: 'python', name: 'Python', extension: '.py' },
-  { id: 'java', name: 'Java', extension: '.java' },
-  { id: 'typescript', name: 'TypeScript', extension: '.ts' },
-  { id: 'react', name: 'React', extension: '.jsx' },
-  { id: 'html', name: 'HTML', extension: '.html' },
-  { id: 'css', name: 'CSS', extension: '.css' },
-  { id: 'sql', name: 'SQL', extension: '.sql' },
-  { id: 'go', name: 'Go', extension: '.go' },
-  { id: 'rust', name: 'Rust', extension: '.rs' },
-];
-
-const CODE_THEMES = [
-  { id: 'dark', name: 'Dark', background: '#1e1e1e', text: '#d4d4d4' },
-  { id: 'light', name: 'Light', background: '#ffffff', text: '#000000' },
-  { id: 'monokai', name: 'Monokai', background: '#272822', text: '#f8f8f2' },
-  { id: 'github', name: 'GitHub', background: '#f6f8fa', text: '#24292e' },
-];
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 export default function CodeEditorScreen({ navigation, route }) {
-  const [code, setCode] = useState('');
-  const [language, setLanguage] = useState('javascript');
-  const [theme, setTheme] = useState('dark');
-  const [title, setTitle] = useState('');
-  const [sendAsStory, setSendAsStory] = useState(false);
-  const [description, setDescription] = useState('');
-  const [showLanguageModal, setShowLanguageModal] = useState(false);
-  const [showShareModal, setShowShareModal] = useState(false);
-  const [showAIModal, setShowAIModal] = useState(false);
+  // Check if we're opening a shared snippet
+  const sharedSnippet = route?.params?.sharedSnippet;
+  
+  // Project state
+  const [currentProject, setCurrentProject] = useState(null);
+  const [projects, setProjects] = useState([]);
+  const [showProjectSelector, setShowProjectSelector] = useState(false);
+  
+  // File state
+  const [currentFile, setCurrentFile] = useState('src/App.js');
+  const [fileContent, setFileContent] = useState('');
+  const [openFiles, setOpenFiles] = useState(['src/App.js']);
+  const [showFileExplorer, setShowFileExplorer] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(false);
+  const [terminalHeight, setTerminalHeight] = useState(200);
+  
+  // Editor state
+  const [cursorPosition, setCursorPosition] = useState({ line: 0, column: 0 });
+  const [selectedText, setSelectedText] = useState('');
+  const [showLineNumbers, setShowLineNumbers] = useState(true);
+  const [unsavedChanges, setUnsavedChanges] = useState(false);
+  
+  // AI state
+  const [showAIPanel, setShowAIPanel] = useState(false);
   const [aiPrompt, setAIPrompt] = useState('');
-  const [generatingCode, setGeneratingCode] = useState(false);
-  const [friends, setFriends] = useState([]);
-  const [selectedFriends, setSelectedFriends] = useState([]);
-  const [suggestedSnippets, setSuggestedSnippets] = useState([]);
-  const [lineNumbers, setLineNumbers] = useState(['1']);
-  const [remainingSnippets, setRemainingSnippets] = useState(null);
-  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [aiLoading, setAILoading] = useState(false);
+  const [showInlineAI, setShowInlineAI] = useState(false);
+  const [inlineAIPrompt, setInlineAIPrompt] = useState('');
+  
+  // Preview state
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState(null);
+  
+  // Deployment state
+  const [showDeployModal, setShowDeployModal] = useState(false);
+  const [deploymentDescription, setDeploymentDescription] = useState('');
+  const [deploying, setDeploying] = useState(false);
+  const [deployedUrl, setDeployedUrl] = useState('');
+  
+  // Sharing state
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareAsStory, setShareAsStory] = useState(false);
+  const [shareDescription, setShareDescription] = useState('');
+  
+  // UI state
+  const [showNewProjectModal, setShowNewProjectModal] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [showNewFileModal, setShowNewFileModal] = useState(false);
+  const [newFileName, setNewFileName] = useState('');
+  const [showNewFolderModal, setShowNewFolderModal] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+
   const editorRef = useRef(null);
-
-  // If receiving a shared snippet
-  useEffect(() => {
-    if (route.params?.sharedSnippet) {
-      const snippet = route.params.sharedSnippet;
-      setCode(snippet.code);
-      setLanguage(snippet.language);
-      setTitle(snippet.title || '');
-      setDescription(snippet.description || '');
-    }
-  }, [route.params]);
+  const autoSaveTimeout = useRef(null);
 
   useEffect(() => {
-    loadFriends();
-    loadSuggestedSnippets();
+    initializeFileSystem();
   }, []);
 
   useEffect(() => {
-  loadLimitInfo();
-}, []);
+    // Handle shared snippet
+    if (sharedSnippet) {
+      handleSharedSnippet();
+    }
+  }, [sharedSnippet]);
 
   useEffect(() => {
-    // Update line numbers when code changes
-    const lines = code.split('\n');
-    setLineNumbers(lines.map((_, index) => String(index + 1)));
-  }, [code]);
+    if (currentProject && currentFile) {
+      const file = currentProject.files[currentFile];
+      if (file) {
+        setFileContent(file.content || '');
+      }
+    }
+  }, [currentProject, currentFile]);
 
-  const loadFriends = async () => {
+  useEffect(() => {
+    // Auto-save functionality
+    if (autoSaveTimeout.current) {
+      clearTimeout(autoSaveTimeout.current);
+    }
+    
+    if (unsavedChanges) {
+      autoSaveTimeout.current = setTimeout(() => {
+        saveCurrentFile();
+      }, 2000); // Auto-save after 2 seconds of inactivity
+    }
+    
+    return () => {
+      if (autoSaveTimeout.current) {
+        clearTimeout(autoSaveTimeout.current);
+      }
+    };
+  }, [fileContent, unsavedChanges]);
+
+  const handleSharedSnippet = async () => {
+    if (!sharedSnippet) return;
+    
+    // Create a new file for the shared snippet
+    if (currentProject) {
+      const fileName = `src/shared/${sharedSnippet.title || 'snippet'}.${sharedSnippet.language || 'js'}`;
+      await VirtualFileSystem.saveFile(currentProject.id, fileName, sharedSnippet.code);
+      setCurrentFile(fileName);
+      setOpenFiles([...openFiles, fileName]);
+      
+      Alert.alert(
+        'Code Snippet Imported',
+        `The shared code has been added to your project as ${fileName}`
+      );
+    }
+  };
+
+  const initializeFileSystem = async () => {
+    await VirtualFileSystem.initialize();
+    const allProjects = await VirtualFileSystem.getAllProjects();
+    setProjects(allProjects);
+    
+    if (allProjects.length === 0) {
+      // Create a default project if none exists
+      const defaultProject = await VirtualFileSystem.createProject('My First App', 'react');
+      setCurrentProject(defaultProject);
+      setProjects([defaultProject]);
+    } else {
+      setCurrentProject(allProjects[0]);
+    }
+  };
+
+  const createNewProject = async () => {
+    if (!newProjectName.trim()) {
+      Alert.alert('Error', 'Please enter a project name');
+      return;
+    }
+
     try {
-      const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        const friendIds = userData.friends || [];
+      setGenerating(true);
+      
+      // Create the project with React template
+      const project = await VirtualFileSystem.createProject(newProjectName.trim(), 'react');
+      
+      // Update state
+      setCurrentProject(project);
+      setProjects([...projects, project]);
+      
+      // Set the main file
+      setCurrentFile('src/App.js');
+      setOpenFiles(['src/App.js']);
+      
+      // Reset modal state
+      setNewProjectName('');
+      setShowNewProjectModal(false);
+      
+      Alert.alert('Success', `Created React project: ${newProjectName}`);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to create project: ' + error.message);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleAIGenerate = async () => {
+    if (!aiPrompt.trim()) {
+      Alert.alert('Error', 'Please describe what you want to build');
+      return;
+    }
+
+    setAILoading(true);
+    try {
+      const result = await CodeAIService.generateReactApp(aiPrompt, currentProject?.files);
+      
+      // Create new project with generated files
+      const project = await VirtualFileSystem.createProject(
+        result.projectName || 'AI Generated App',
+        'react'
+      );
+      
+      // Clear default files first (except package.json)
+      const defaultFiles = Object.keys(project.files);
+      for (const filePath of defaultFiles) {
+        if (filePath !== 'package.json') {
+          delete project.files[filePath];
+        }
+      }
+      
+      // Save all generated files with proper folder structure
+      for (const [filePath, content] of Object.entries(result.files)) {
+        // Ensure the file path starts with src/ if it's a source file
+        const normalizedPath = filePath.startsWith('src/') || filePath.includes('.json') || filePath === 'README.md' 
+          ? filePath 
+          : `src/${filePath}`;
+          
+        await VirtualFileSystem.saveFile(project.id, normalizedPath, content);
+      }
+      
+      // Add dependencies
+      if (result.dependencies) {
+        for (const dep of result.dependencies) {
+          await VirtualFileSystem.installPackage(project.id, dep);
+        }
+      }
+      
+      // Update project with generated content
+      const updatedProject = await VirtualFileSystem.getProject(project.id);
+      setCurrentProject(updatedProject);
+      setProjects([...projects, updatedProject]);
+      
+      // Open the main App.js file
+      const mainFile = 'src/App.js';
+      setCurrentFile(mainFile);
+      setOpenFiles([mainFile]);
+      
+      // Show instructions if provided
+      if (result.instructions) {
+        Alert.alert('App Generated!', result.instructions);
+      } else {
+        Alert.alert('Success', `Generated: ${result.description || result.projectName}`);
+      }
+      
+      setShowAIPanel(false);
+      setAIPrompt('');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to generate app: ' + error.message);
+    } finally {
+      setAILoading(false);
+    }
+  };
+
+  const handleInlineAI = async () => {
+    if (!inlineAIPrompt.trim()) return;
+
+    setAILoading(true);
+    try {
+      // Check if the prompt is asking to add features/components
+      const isAddingFeature = inlineAIPrompt.toLowerCase().includes('add') || 
+                             inlineAIPrompt.toLowerCase().includes('create') ||
+                             inlineAIPrompt.toLowerCase().includes('new');
+      
+      if (isAddingFeature && currentProject) {
+        // Use the add feature functionality
+        const result = await CodeAIService.addFeature({
+          projectFiles: currentProject.files,
+          featureDescription: inlineAIPrompt
+        });
         
-        const friendsData = [];
-        for (const friendId of friendIds) {
-          const friendDoc = await getDoc(doc(db, 'users', friendId));
-          if (friendDoc.exists()) {
-            friendsData.push({
-              id: friendId,
-              ...friendDoc.data()
-            });
+        // Handle modified files
+        if (result.modifiedFiles) {
+          for (const [filePath, content] of Object.entries(result.modifiedFiles)) {
+            await VirtualFileSystem.saveFile(currentProject.id, filePath, content);
           }
         }
-        setFriends(friendsData);
-      }
-    } catch (error) {
-      console.error('Error loading friends:', error);
-    }
-  };
-
-const loadLimitInfo = async () => {
-  try {
-    const remaining = await CodeSnippetService.getRemainingCodeSnippets();
-    setRemainingSnippets(remaining);
-    
-    const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
-    const userData = userDoc.data();
-    setIsSubscribed(userData?.subscription?.status === 'active');
-  } catch (error) {
-    console.error('Error loading limit info:', error);
-  }
-};
-
-  const loadSuggestedSnippets = async () => {
-    try {
-      const suggestions = await CodeSnippetService.getSuggestedSnippets();
-      setSuggestedSnippets(suggestions);
-    } catch (error) {
-      console.error('Error loading suggestions:', error);
-    }
-  };
-
-  const generateCode = async () => {
-    if (!aiPrompt.trim()) {
-      Alert.alert('Error', 'Please enter a description of what you want to generate');
-      return;
-    }
-
-    setGeneratingCode(true);
-    try {
-      const generatedCode = await OpenAIService.generateCode({
-        prompt: aiPrompt,
-        language: language,
-        context: code // Include existing code as context
-      });
-
-      if (code) {
-        // Append to existing code
-        setCode(code + '\n\n' + generatedCode);
-      } else {
-        setCode(generatedCode);
-      }
-
-      setAIPrompt('');
-      setShowAIModal(false);
-
-      // Track code generation for recommendations
-      await CodeSnippetService.trackCodeGeneration({
-        prompt: aiPrompt,
-        language: language,
-        generatedCode: generatedCode
-      });
-    } catch (error) {
-      console.error('Error generating code:', error);
-      Alert.alert('Error', 'Failed to generate code');
-    } finally {
-      setGeneratingCode(false);
-    }
-  };
-
-  // Update the shareSnippet function in CodeEditorScreen.js
-// Replace the shareSnippet function with this:
-
-  const shareSnippet = async () => {
-    if (!code.trim()) {
-      Alert.alert('Error', 'Please write some code first');
-      return;
-    }
-
-  if (!sendAsStory && selectedFriends.length === 0) {
-    Alert.alert('Error', 'Please select at least one friend to share with');
-    return;
-  }
-
-    try {
-      // Check if user can send code snippet
-      const canSend = await CodeSnippetService.canSendCodeSnippet();
-      const remaining = await CodeSnippetService.getRemainingCodeSnippets();
-      
-      if (!canSend) {
-        Alert.alert(
-          'Code Snippet Limit Reached', 
-          'You\'ve reached your monthly limit of 20 code snippets. Upgrade to DevChat Pro for unlimited code sharing!',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Upgrade', onPress: () => navigation.navigate('Profile') }
-          ]
-        );
-        return;
-      }
-
-      // Show remaining count if not unlimited
-      if (remaining !== 'Unlimited' && remaining <= 5) {
-        Alert.alert(
-          'Code Snippets Remaining',
-          `You have ${remaining} code snippets left this month. Upgrade to Pro for unlimited sharing!`,
-          [
-            { text: 'Continue', onPress: () => proceedWithSharing() },
-            { text: 'Upgrade', onPress: () => navigation.navigate('Profile') }
-          ]
-        );
-      } else {
-        proceedWithSharing();
-      }
-    } catch (error) {
-      console.error('Error checking limits:', error);
-      proceedWithSharing(); // Proceed anyway if error
-    }
-  };
-
-  const proceedWithSharing = async () => {
-  try {
-    if (sendAsStory) {
-      // Import SubscriptionService at the top of the file
-      const SubscriptionService = require('../services/SubscriptionService').default;
-      
-      // Check story limit
-      const canSendStory = await SubscriptionService.canSendContent('story');
-      
-      if (!canSendStory) {
-        Alert.alert(
-          'Story Limit Reached', 
-          'You\'ve reached your monthly limit. Upgrade to DevChat Pro for unlimited stories!',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Upgrade', onPress: () => navigation.navigate('Profile') }
-          ]
-        );
-        return;
-      }
-
-      // Create code snippet story
-      const storyData = {
-        userId: auth.currentUser.uid,
-        username: auth.currentUser.displayName || 'Developer',
-        timestamp: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-        type: 'story',
-        contentType: 'code', // New field to identify code stories
-        code: code,
-        language: language,
-        title: title || `${language} snippet`,
-        description: description,
-        metadata: {
-          theme: theme,
-          linesOfCode: code.split('\n').length,
-          characters: code.length
-        },
-        public: true,
-        views: 0,
-        likes: 0,
-        shares: 0
-      };
-
-      await addDoc(collection(db, 'snaps'), storyData);
-      await SubscriptionService.incrementContentCount('story');
-      
-      Alert.alert('Success', 'Code snippet shared as story!', [
-        { text: 'OK', onPress: () => {
-          setShowShareModal(false);
-          // Reset the form
-          setCode('');
-          setTitle('');
-          setDescription('');
-          setSelectedFriends([]);
-          setSendAsStory(false);
-        }}
-      ]);
-    } else {
-      // Original friend sharing logic
-      const snippetData = {
-        code: code,
-        language: language,
-        title: title || `${language} snippet`,
-        description: description,
-        authorId: auth.currentUser.uid,
-        authorName: auth.currentUser.displayName || 'Developer',
-        createdAt: new Date().toISOString(),
-        sharedWith: selectedFriends,
-        metadata: {
-          theme: theme,
-          linesOfCode: code.split('\n').length,
-          characters: code.length
-        }
-      };
-
-      const snippetRef = await addDoc(collection(db, 'codeSnippets'), snippetData);
-
-      // Create messages for friends
-      for (const friendId of selectedFriends) {
-        const chatId = await findOrCreateChat(friendId);
         
-        await addDoc(collection(db, 'chats', chatId, 'messages'), {
-          type: 'code_snippet',
-          snippetId: snippetRef.id,
-          snippetData: snippetData,
-          text: `Shared a ${language} snippet: ${title || 'Untitled'}`,
-          senderId: auth.currentUser.uid,
-          senderName: auth.currentUser.displayName || 'Developer',
-          timestamp: new Date().toISOString()
+        // Handle new files
+        if (result.newFiles) {
+          for (const [filePath, content] of Object.entries(result.newFiles)) {
+            await VirtualFileSystem.saveFile(currentProject.id, filePath, content);
+            // Add to open files if it's a new component
+            if (!openFiles.includes(filePath)) {
+              setOpenFiles([...openFiles, filePath]);
+            }
+          }
+        }
+        
+        // Handle new dependencies
+        if (result.dependencies) {
+          for (const dep of result.dependencies) {
+            await VirtualFileSystem.installPackage(currentProject.id, dep);
+          }
+        }
+        
+        // Refresh project
+        const updatedProject = await VirtualFileSystem.getProject(currentProject.id);
+        setCurrentProject(updatedProject);
+        
+        // Show what was added
+        if (result.explanation) {
+          Alert.alert('Feature Added', result.explanation);
+        }
+        
+        // If new files were created, switch to the first one
+        if (result.newFiles && Object.keys(result.newFiles).length > 0) {
+          const firstNewFile = Object.keys(result.newFiles)[0];
+          setCurrentFile(firstNewFile);
+        }
+      } else {
+        // Just modify the current file
+        const modifiedCode = await CodeAIService.modifyCode({
+          code: fileContent,
+          instruction: inlineAIPrompt,
+          filePath: currentFile
         });
-
-        await updateDoc(doc(db, 'chats', chatId), {
-          lastMessage: `Code snippet: ${title || 'Untitled'}`,
-          lastMessageTime: new Date().toISOString()
-        });
+        
+        setFileContent(modifiedCode);
+        setUnsavedChanges(true);
       }
-
-      await CodeSnippetService.incrementCodeSnippetCount();
-      await CodeSnippetService.trackCodeSharing({
-        snippetId: snippetRef.id,
-        language: language,
-        sharedWith: selectedFriends
-      });
-
-      Alert.alert('Success', 'Code snippet shared!', [
-        { text: 'OK', onPress: () => {
-          setShowShareModal(false);
-          setSelectedFriends([]);
-          // Reset the form
-          setCode('');
-          setTitle('');
-          setDescription('');
-          setSendAsStory(false);
-        }}
-      ]);
+      
+      setShowInlineAI(false);
+      setInlineAIPrompt('');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to apply AI changes: ' + error.message);
+    } finally {
+      setAILoading(false);
     }
-  } catch (error) {
-    console.error('Error sharing snippet:', error);
-    Alert.alert('Error', 'Failed to share snippet');
-  }
-};
+  };
 
-  const findOrCreateChat = async (friendId) => {
-    // Check for existing chat
-    const chatsQuery = query(
-      collection(db, 'chats'),
-      where('participants', 'array-contains', auth.currentUser.uid)
-    );
+  const saveCurrentFile = async (content = fileContent) => {
+    if (currentProject && currentFile) {
+      await VirtualFileSystem.saveFile(currentProject.id, currentFile, content);
+      const updatedProject = await VirtualFileSystem.getProject(currentProject.id);
+      setCurrentProject(updatedProject);
+      setUnsavedChanges(false);
+    }
+  };
+
+  const handleFileSelect = (filePath) => {
+    // Save current file before switching
+    if (unsavedChanges) {
+      saveCurrentFile();
+    }
     
-    const snapshot = await getDocs(chatsQuery);
-    let existingChatId = null;
+    setCurrentFile(filePath);
+    if (!openFiles.includes(filePath)) {
+      setOpenFiles([...openFiles, filePath]);
+    }
+    setShowFileExplorer(false);
+  };
+
+  const closeFile = (filePath) => {
+    const newOpenFiles = openFiles.filter(f => f !== filePath);
+    setOpenFiles(newOpenFiles);
     
-    snapshot.forEach((doc) => {
-      const chat = doc.data();
-      if (chat.participants.includes(friendId) && chat.type !== 'group') {
-        existingChatId = doc.id;
+    if (currentFile === filePath && newOpenFiles.length > 0) {
+      setCurrentFile(newOpenFiles[0]);
+    }
+  };
+
+  const generatePreview = () => {
+    if (!currentProject) return;
+
+    setPreviewLoading(true);
+    setPreviewError(null);
+    
+    try {
+      // Save any unsaved changes first
+      if (unsavedChanges) {
+        saveCurrentFile();
       }
-    });
-
-    if (existingChatId) return existingChatId;
-
-    // Create new chat
-    const friendDoc = await getDoc(doc(db, 'users', friendId));
-    const friendData = friendDoc.data();
+      
+      // Get the latest project data
+      const project = currentProject;
+      
+      // Process all JavaScript files to handle imports
+      let combinedJS = '';
+      const processedFiles = new Set();
+      
+      // Helper function to extract component name from file path
+      const getComponentName = (filePath) => {
+        const fileName = filePath.split('/').pop().replace('.js', '').replace('.jsx', '');
+        return fileName;
+      };
+      
+      // Process all component files first
+      Object.entries(project.files).forEach(([filePath, file]) => {
+        if ((filePath.endsWith('.js') || filePath.endsWith('.jsx')) && 
+            filePath !== 'src/App.js' && 
+            filePath.includes('src/')) {
+          const componentName = getComponentName(filePath);
+          // Remove import statements and export statements
+          let cleanedContent = file.content
+            .replace(/import\s+.*?from\s+['"].*?['"];?\s*/g, '')
+            .replace(/export\s+default\s+/g, '')
+            .replace(/export\s+{\s*.*?\s*};?\s*/g, '')
+            .replace(/export\s+/g, '');
+          
+          combinedJS += `\n// ${filePath}\n${cleanedContent}\n`;
+          processedFiles.add(filePath);
+        }
+      });
+      
+      // Add utilities and services
+      Object.entries(project.files).forEach(([filePath, file]) => {
+        if ((filePath.includes('utils/') || filePath.includes('services/')) && 
+            filePath.endsWith('.js')) {
+          let cleanedContent = file.content
+            .replace(/import\s+.*?from\s+['"].*?['"];?\s*/g, '')
+            .replace(/export\s+default\s+/g, '')
+            .replace(/export\s+{\s*.*?\s*};?\s*/g, '')
+            .replace(/export\s+const\s+/g, 'const ')
+            .replace(/export\s+function\s+/g, 'function ')
+            .replace(/export\s+/g, '');
+          
+          combinedJS = `\n// ${filePath}\n${cleanedContent}\n` + combinedJS;
+        }
+      });
+      
+      // Process App.js last
+      let appJS = project.files['src/App.js']?.content || '';
+      appJS = appJS
+        .replace(/import\s+.*?from\s+['"].*?['"];?\s*/g, '')
+        .replace(/export\s+default\s+App;?\s*/g, '');
+      
+      // Combine all JavaScript
+      const finalJS = combinedJS + '\n' + appJS;
+      
+      // Generate HTML with all necessary React setup
+      const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${project.name}</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body { 
+      margin: 0; 
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+    }
+    #root {
+      width: 100%;
+      min-height: 100vh;
+    }
+    #error-display {
+      color: red;
+      padding: 20px;
+      white-space: pre-wrap;
+      font-family: monospace;
+    }
+    ${project.files['src/App.css']?.content || ''}
+    ${project.files['src/index.css']?.content || ''}
+    ${Object.entries(project.files)
+      .filter(([path]) => path.endsWith('.css') && path !== 'src/App.css' && path !== 'src/index.css')
+      .map(([path, file]) => `/* ${path} */\n${file.content}`)
+      .join('\n')}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <div id="error-display" style="display: none;"></div>
+  <script type="text/babel">
+    // Redirect console for debugging
+    const errorDisplay = document.getElementById('error-display');
+    const originalLog = console.log;
+    const originalError = console.error;
     
-    const chatData = {
-      participants: [auth.currentUser.uid, friendId],
-      participantNames: {
-        [auth.currentUser.uid]: auth.currentUser.displayName || 'Developer',
-        [friendId]: friendData.username || friendData.displayName || 'Friend'
-      },
-      lastMessage: '',
-      lastMessageTime: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-      type: 'direct'
+    console.log = (...args) => {
+      originalLog(...args);
+      window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'log', data: args }));
+    };
+    
+    console.error = (...args) => {
+      originalError(...args);
+      errorDisplay.style.display = 'block';
+      errorDisplay.textContent += args.join(' ') + '\\n';
+      window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'error', data: args }));
     };
 
-    const chatRef = await addDoc(collection(db, 'chats'), chatData);
-    return chatRef.id;
-  };
-
-  const insertSnippet = (snippet) => {
-    if (code) {
-      setCode(code + '\n\n' + snippet.code);
-    } else {
-      setCode(snippet.code);
+    try {
+      // Combined JavaScript from all files
+      ${finalJS}
+      
+      // Check if App is defined
+      if (typeof App === 'undefined') {
+        throw new Error('App component is not defined. Make sure your App.js exports a component.');
+      }
+      
+      // Render the app
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(React.createElement(App));
+      
+      console.log('App rendered successfully with ${Object.keys(project.files).length} files');
+    } catch (error) {
+      console.error('Render error:', error);
+      errorDisplay.style.display = 'block';
+      errorDisplay.textContent = 'Error: ' + error.message + '\\n' + error.stack;
     }
-    setLanguage(snippet.language);
+  </script>
+</body>
+</html>`;
+
+      setPreviewHtml(html);
+      setShowPreview(true);
+    } catch (error) {
+      console.error('Preview generation error:', error);
+      setPreviewError(error.message);
+      Alert.alert('Preview Error', 'Failed to generate preview: ' + error.message);
+    } finally {
+      setPreviewLoading(false);
+    }
   };
 
-  const copyToClipboard = async () => {
-  if (!code.trim()) {
-    Alert.alert('Nothing to copy', 'Write some code first');
-    return;
-  }
-  
-  try {
-    await Clipboard.setStringAsync(code);
-    Alert.alert('Copied!', 'Code copied to clipboard');
-  } catch (error) {
-    console.error('Error copying to clipboard:', error);
-    // Fallback for web
-    if (Platform.OS === 'web' && navigator.clipboard) {
-      navigator.clipboard.writeText(code).then(() => {
-        Alert.alert('Copied!', 'Code copied to clipboard');
-      }).catch(err => {
-        Alert.alert('Error', 'Failed to copy code');
+  const deployProject = async () => {
+    if (!currentProject) return;
+    
+    setDeploying(true);
+    try {
+      const result = await AppDeployService.deployApp(currentProject);
+      setDeployedUrl(result.url);
+      
+      Alert.alert(
+        'App Deployed Successfully!',
+        'Your app is now live and can be shared with anyone!',
+        [
+          { text: 'Share', onPress: () => shareDeployedApp(result.url) },
+          { text: 'OK' }
+        ]
+      );
+      
+      setShowDeployModal(false);
+    } catch (error) {
+      Alert.alert('Deployment Failed', error.message);
+    } finally {
+      setDeploying(false);
+    }
+  };
+
+  const shareAsAppStory = async () => {
+    if (!currentProject) return;
+    
+    try {
+      await AppDeployService.shareAsStory(currentProject, shareDescription);
+      Alert.alert('Success', 'Your app has been shared as a story!');
+      setShowShareModal(false);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to share as story');
+    }
+  };
+
+  const shareDeployedApp = async (url) => {
+    try {
+      await Share.share({
+        message: `Check out my app built with DevChat: ${url}`,
+        url: url,
+        title: currentProject.name
       });
+    } catch (error) {
+      Alert.alert('Error', 'Failed to share app');
     }
-  }
-};
+  };
 
-  const currentTheme = CODE_THEMES.find(t => t.id === theme);
+  const shareCodeSnippet = async () => {
+    if (!currentFile || !fileContent) return;
+    
+    navigation.navigate('Camera', {
+      codeSnippet: {
+        code: fileContent,
+        language: getFileLanguage(currentFile),
+        title: currentFile.split('/').pop(),
+        description: `${fileContent.split('\n').length} lines of code`
+      }
+    });
+  };
+
+  const forkExistingApp = async (appId) => {
+    try {
+      const forkedProject = await AppDeployService.forkApp(appId);
+      setCurrentProject(forkedProject);
+      setProjects([...projects, forkedProject]);
+      Alert.alert('Success', 'App forked successfully!');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to fork app');
+    }
+  };
+
+  const renderFileExplorer = () => {
+    if (!currentProject) return null;
+    
+    const files = Object.keys(currentProject.files);
+    const fileTree = {};
+    
+    // Build file tree structure
+    files.forEach(filePath => {
+      const parts = filePath.split('/');
+      let current = fileTree;
+      
+      parts.forEach((part, index) => {
+        if (index === parts.length - 1) {
+          current[part] = filePath;
+        } else {
+          current[part] = current[part] || {};
+          current = current[part];
+        }
+      });
+    });
+
+    return (
+      <View style={styles.fileExplorer}>
+        <View style={styles.fileExplorerHeader}>
+          <Text style={styles.fileExplorerTitle}>Files</Text>
+          <View style={styles.fileActions}>
+            <TouchableOpacity onPress={() => setShowNewFolderModal(true)} style={styles.fileActionButton}>
+              <Ionicons name="folder-open" size={20} color={Colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => createNewFile()} style={styles.fileActionButton}>
+              <Ionicons name="add" size={20} color={Colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowFileExplorer(false)}>
+              <Ionicons name="close" size={20} color={Colors.text} />
+            </TouchableOpacity>
+          </View>
+        </View>
+        <ScrollView>
+          {renderFileTree(fileTree)}
+        </ScrollView>
+      </View>
+    );
+  };
+
+  const createNewFile = () => {
+    setShowNewFileModal(true);
+  };
+
+  const createFileWithPath = async (filePath) => {
+    if (!currentProject || !filePath.trim()) return;
+    
+    try {
+      await VirtualFileSystem.createFile(currentProject.id, filePath.trim());
+      const updatedProject = await VirtualFileSystem.getProject(currentProject.id);
+      setCurrentProject(updatedProject);
+      handleFileSelect(filePath.trim());
+      setNewFileName('');
+      setShowNewFileModal(false);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to create file: ' + error.message);
+    }
+  };
+
+  const createFolder = async () => {
+    if (!currentProject || !newFolderName.trim()) return;
+    
+    try {
+      // Create a placeholder file in the folder to ensure it exists
+      const placeholderPath = `${newFolderName.trim()}/.gitkeep`;
+      await VirtualFileSystem.createFile(currentProject.id, placeholderPath);
+      const updatedProject = await VirtualFileSystem.getProject(currentProject.id);
+      setCurrentProject(updatedProject);
+      setNewFolderName('');
+      setShowNewFolderModal(false);
+      Alert.alert('Success', `Created folder: ${newFolderName}`);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to create folder: ' + error.message);
+    }
+  };
+
+  const renderFileTree = (tree, level = 0) => {
+    return Object.entries(tree).map(([name, value]) => {
+      const isFile = typeof value === 'string';
+      const icon = isFile ? getFileIcon(name) : 'folder';
+      
+      return (
+        <View key={name}>
+          <TouchableOpacity
+            style={[styles.fileItem, { paddingLeft: 20 + level * 20 }]}
+            onPress={() => isFile && handleFileSelect(value)}
+          >
+            <Ionicons name={icon} size={16} color={Colors.primary} />
+            <Text style={[styles.fileName, currentFile === value && styles.activeFileName]}>
+              {name}
+            </Text>
+            {currentFile === value && unsavedChanges && (
+              <Text style={styles.unsavedIndicator}>●</Text>
+            )}
+          </TouchableOpacity>
+          {!isFile && renderFileTree(value, level + 1)}
+        </View>
+      );
+    });
+  };
+
+  const getFileIcon = (filename) => {
+    const extension = filename.split('.').pop();
+    const iconMap = {
+      'js': 'logo-javascript',
+      'jsx': 'logo-react',
+      'css': 'color-palette',
+      'json': 'code-slash',
+      'html': 'globe',
+      'md': 'document-text',
+      'gitkeep': 'git-branch'
+    };
+    return iconMap[extension] || 'document';
+  };
+
+  const getFileLanguage = (filename) => {
+    const extension = filename.split('.').pop();
+    return extension || 'javascript';
+  };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
+    <View style={styles.container}>
       {/* Header */}
-          <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color={Colors.white} />
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => setShowProjectSelector(true)}>
+          <Text style={styles.projectName}>
+            {currentProject?.name || 'No Project'} ▼
+          </Text>
         </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>Code Editor</Text>
-          {remainingSnippets !== null && !isSubscribed && (
-            <Text style={styles.limitText}>
-              {remainingSnippets} snippets left
-            </Text>
-          )}
-        </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity onPress={copyToClipboard} style={styles.headerButton}>
-            <Ionicons name="copy-outline" size={24} color={Colors.white} />
+          <TouchableOpacity onPress={generatePreview} style={styles.headerButton}>
+            <Ionicons name="play" size={20} color={Colors.white} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => setShowAIModal(true)} style={styles.headerButton}>
-            <Ionicons name="sparkles" size={24} color={Colors.white} />
+          <TouchableOpacity onPress={() => setShowDeployModal(true)} style={styles.headerButton}>
+            <Ionicons name="cloud-upload" size={20} color={Colors.white} />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => setShowShareModal(true)} style={styles.headerButton}>
-            <Ionicons name="send" size={24} color={Colors.white} />
+            <Ionicons name="share" size={20} color={Colors.white} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setShowAIPanel(true)} style={styles.headerButton}>
+            <Ionicons name="sparkles" size={20} color={Colors.white} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setShowFileExplorer(true)} style={styles.headerButton}>
+            <Ionicons name="folder" size={20} color={Colors.white} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setShowTerminal(!showTerminal)} style={styles.headerButton}>
+            <Ionicons name="terminal" size={20} color={Colors.white} />
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Language Selector */}
-      <TouchableOpacity 
-        style={styles.languageSelector}
-        onPress={() => setShowLanguageModal(true)}
-      >
-        <Text style={styles.languageText}>
-          {LANGUAGES.find(l => l.id === language)?.name || 'JavaScript'}
-        </Text>
-        <Ionicons name="chevron-down" size={20} color={Colors.white} />
-      </TouchableOpacity>
+      {/* File Tabs */}
+      <ScrollView horizontal style={styles.tabBar} showsHorizontalScrollIndicator={false}>
+        {openFiles.map(file => (
+          <View key={file} style={[styles.tab, currentFile === file && styles.activeTab]}>
+            <TouchableOpacity onPress={() => setCurrentFile(file)}>
+              <Text style={[styles.tabText, currentFile === file && styles.activeTabText]}>
+                {file.split('/').pop()}
+                {currentFile === file && unsavedChanges && <Text> •</Text>}
+              </Text>
+            </TouchableOpacity>
+            {openFiles.length > 1 && (
+              <TouchableOpacity onPress={() => closeFile(file)} style={styles.closeTab}>
+                <Ionicons name="close" size={14} color={Colors.gray} />
+              </TouchableOpacity>
+            )}
+          </View>
+        ))}
+      </ScrollView>
 
       {/* Code Editor */}
-      <View style={[styles.editorContainer, { backgroundColor: currentTheme.background }]}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+      <View style={[styles.editorContainer, showTerminal && styles.editorWithTerminal]}>
+        <ScrollView style={styles.editor}>
           <View style={styles.editorContent}>
-            {/* Line Numbers */}
-            <View style={styles.lineNumbers}>
-              {lineNumbers.map((num, index) => (
-                <Text key={index} style={[styles.lineNumber, { color: currentTheme.text + '50' }]}>
-                  {num}
-                </Text>
-              ))}
-            </View>
-            
-            {/* Code Input */}
+            {showLineNumbers && (
+              <View style={styles.lineNumbers}>
+                {fileContent.split('\n').map((_, index) => (
+                  <Text key={index} style={styles.lineNumber}>
+                    {index + 1}
+                  </Text>
+                ))}
+              </View>
+            )}
             <TextInput
               ref={editorRef}
-              style={[styles.codeInput, { color: currentTheme.text }]}
-              value={code}
-              onChangeText={setCode}
-              placeholder="// Start coding..."
-              placeholderTextColor={currentTheme.text + '50'}
+              style={styles.codeInput}
+              value={fileContent}
+              onChangeText={(text) => {
+                setFileContent(text);
+                setUnsavedChanges(true);
+              }}
               multiline
               autoCapitalize="none"
               autoCorrect={false}
-              autoComplete="off"
               keyboardType="default"
-              textAlignVertical="top"
+              placeholder="Start coding..."
+              placeholderTextColor={Colors.gray}
+              scrollEnabled={false}
             />
           </View>
         </ScrollView>
       </View>
 
-      {/* Suggested Snippets */}
-      {suggestedSnippets.length > 0 && (
-        <View style={styles.suggestionsContainer}>
-          <Text style={styles.suggestionsTitle}>Suggested for your friends:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {suggestedSnippets.map((snippet, index) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.suggestionChip}
-                onPress={() => insertSnippet(snippet)}
-              >
-                <Text style={styles.suggestionText}>{snippet.title}</Text>
-                <Text style={styles.suggestionLang}>{snippet.language}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+      {/* Terminal */}
+      {showTerminal && (
+        <View style={[styles.terminalContainer, { height: terminalHeight }]}>
+          <Terminal 
+            project={currentProject}
+            onCreateFile={(filePath) => createFileWithPath(filePath)}
+            onDeleteFile={async (filePath) => {
+              if (!currentProject) return;
+              await VirtualFileSystem.deleteFile(currentProject.id, filePath);
+              const updatedProject = await VirtualFileSystem.getProject(currentProject.id);
+              setCurrentProject(updatedProject);
+              // Remove from open files if it's open
+              setOpenFiles(openFiles.filter(f => f !== filePath));
+              if (currentFile === filePath) {
+                setCurrentFile(openFiles[0] || 'src/App.js');
+              }
+            }}
+          />
         </View>
       )}
 
-      {/* Language Selection Modal */}
-      <Modal
-        visible={showLanguageModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowLanguageModal(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Select Language</Text>
-            <FlatList
-              data={LANGUAGES}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.languageItem}
-                  onPress={() => {
-                    setLanguage(item.id);
-                    setShowLanguageModal(false);
-                  }}
-                >
-                  <Text style={styles.languageName}>{item.name}</Text>
-                  <Text style={styles.languageExt}>{item.extension}</Text>
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        </View>
-      </Modal>
+      {/* Inline AI Bar */}
+      {!showTerminal && (
+        <TouchableOpacity 
+          style={styles.inlineAIButton}
+          onPress={() => setShowInlineAI(true)}
+        >
+          <Ionicons name="sparkles" size={20} color={Colors.primary} />
+          <Text style={styles.inlineAIText}>AI Edit (Cmd+K)</Text>
+        </TouchableOpacity>
+      )}
 
-      {/* AI Generation Modal */}
+      {/* File Explorer Modal */}
+      {showFileExplorer && renderFileExplorer()}
+
+      {/* AI Panel Modal */}
       <Modal
-        visible={showAIModal}
+        visible={showAIPanel}
         animationType="slide"
         transparent={true}
-        onRequestClose={() => setShowAIModal(false)}
+        onRequestClose={() => setShowAIPanel(false)}
       >
         <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Generate Code with AI</Text>
+          <View style={styles.aiPanel}>
+            <View style={styles.aiHeader}>
+              <Text style={styles.aiTitle}>AI App Generator</Text>
+              <TouchableOpacity onPress={() => setShowAIPanel(false)}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+            
+            <Text style={styles.aiLabel}>Describe your app:</Text>
             <TextInput
-              style={styles.aiPromptInput}
-              placeholder="Describe what you want to generate..."
+              style={styles.aiInput}
+              placeholder="Create a todo app with categories, filters, and local storage. Add components for TodoList, TodoItem, and CategoryFilter..."
               placeholderTextColor={Colors.gray}
               value={aiPrompt}
               onChangeText={setAIPrompt}
               multiline
-              maxLength={500}
+              numberOfLines={4}
             />
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={() => setShowAIModal(false)}
-              >
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.generateButton, generatingCode && styles.disabledButton]}
-                onPress={generateCode}
-                disabled={generatingCode}
-              >
-                {generatingCode ? (
-                  <ActivityIndicator size="small" color={Colors.white} />
-                ) : (
-                  <Text style={styles.generateText}>Generate</Text>
-                )}
+            
+            <TouchableOpacity
+              style={[styles.generateButton, aiLoading && styles.disabledButton]}
+              onPress={handleAIGenerate}
+              disabled={aiLoading}
+            >
+              {aiLoading ? (
+                <ActivityIndicator size="small" color={Colors.white} />
+              ) : (
+                <>
+                  <Ionicons name="sparkles" size={20} color={Colors.white} />
+                  <Text style={styles.generateText}>Generate App</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Deploy Modal */}
+      <Modal
+        visible={showDeployModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowDeployModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.deployModal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Deploy App</Text>
+              <TouchableOpacity onPress={() => setShowDeployModal(false)}>
+                <Ionicons name="close" size={24} color={Colors.text} />
               </TouchableOpacity>
             </View>
+            
+            <Text style={styles.deployInfo}>
+              Deploy your app to the cloud and get a shareable link!
+            </Text>
+            
+            <TextInput
+              style={styles.input}
+              placeholder="App description (optional)"
+              placeholderTextColor={Colors.gray}
+              value={deploymentDescription}
+              onChangeText={setDeploymentDescription}
+              multiline
+              numberOfLines={3}
+            />
+            
+            <TouchableOpacity
+              style={[styles.deployButton, deploying && styles.disabledButton]}
+              onPress={deployProject}
+              disabled={deploying}
+            >
+              {deploying ? (
+                <>
+                  <ActivityIndicator size="small" color={Colors.white} />
+                  <Text style={styles.deployButtonText}>Deploying...</Text>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="rocket" size={20} color={Colors.white} />
+                  <Text style={styles.deployButtonText}>Deploy Now</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            
+            {deployedUrl && (
+              <View style={styles.deployedInfo}>
+                <Text style={styles.deployedLabel}>Your app is live at:</Text>
+                <Text style={styles.deployedUrl}>{deployedUrl}</Text>
+                <TouchableOpacity
+                  style={styles.shareUrlButton}
+                  onPress={() => shareDeployedApp(deployedUrl)}
+                >
+                  <Text style={styles.shareUrlText}>Share Link</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
       </Modal>
@@ -590,91 +958,358 @@ const loadLimitInfo = async () => {
         onRequestClose={() => setShowShareModal(false)}
       >
         <View style={styles.modalContainer}>
-          <View style={styles.shareModalContent}>
-            <Text style={styles.modalTitle}>Share Code Snippet</Text>
+          <View style={styles.shareModal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Share Your App</Text>
+              <TouchableOpacity onPress={() => setShowShareModal(false)}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
             
-            <TextInput
-              style={styles.titleInput}
-              placeholder="Snippet title (optional)"
-              placeholderTextColor={Colors.gray}
-              value={title}
-              onChangeText={setTitle}
-            />
-            
-            <TextInput
-              style={styles.descriptionInput}
-              placeholder="Description (optional)"
-              placeholderTextColor={Colors.gray}
-              value={description}
-              onChangeText={setDescription}
-              multiline
-            />
-            
-            {/* Story Option */}
             <TouchableOpacity
-              style={[styles.storyOption, sendAsStory && styles.storyOptionSelected]}
-              onPress={() => setSendAsStory(!sendAsStory)}
+              style={styles.shareOption}
+              onPress={shareCodeSnippet}
             >
-              <Ionicons name="images" size={24} color={Colors.primary} />
-              <Text style={styles.storyText}>Share as Story</Text>
-              {sendAsStory && <Ionicons name="checkmark" size={20} color={Colors.primary} />}
+              <Ionicons name="code-slash" size={24} color={Colors.primary} />
+              <View style={styles.shareOptionText}>
+                <Text style={styles.shareOptionTitle}>Share Current File</Text>
+                <Text style={styles.shareOptionDesc}>Send as a code snippet to friends</Text>
+              </View>
             </TouchableOpacity>
             
-            {!sendAsStory && (
-              <>
-                <Text style={styles.friendsTitle}>Select Friends</Text>
-                <FlatList
-                  data={friends}
-                  keyExtractor={(item) => item.id}
-                  renderItem={({ item }) => (
-                    <TouchableOpacity
-                      style={[
-                        styles.friendItem,
-                        selectedFriends.includes(item.id) && styles.selectedFriend
-                      ]}
-                      onPress={() => {
-                        if (selectedFriends.includes(item.id)) {
-                          setSelectedFriends(selectedFriends.filter(id => id !== item.id));
-                        } else {
-                          setSelectedFriends([...selectedFriends, item.id]);
-                        }
-                      }}
-                    >
-                      <Ionicons 
-                        name={selectedFriends.includes(item.id) ? "checkbox" : "square-outline"} 
-                        size={24} 
-                        color={Colors.primary} 
-                      />
-                      <Text style={styles.friendName}>{item.username || item.displayName}</Text>
-                    </TouchableOpacity>
-                  )}
-                  style={styles.friendsList}
-                />
-              </>
+            <TouchableOpacity
+              style={styles.shareOption}
+              onPress={() => {
+                setShareAsStory(true);
+                shareAsAppStory();
+              }}
+            >
+              <Ionicons name="images" size={24} color={Colors.primary} />
+              <View style={styles.shareOptionText}>
+                <Text style={styles.shareOptionTitle}>Share as Story</Text>
+                <Text style={styles.shareOptionDesc}>Share your app progress with everyone</Text>
+              </View>
+            </TouchableOpacity>
+            
+            {deployedUrl && (
+              <TouchableOpacity
+                style={styles.shareOption}
+                onPress={() => shareDeployedApp(deployedUrl)}
+              >
+                <Ionicons name="link" size={24} color={Colors.primary} />
+                <View style={styles.shareOptionText}>
+                  <Text style={styles.shareOptionTitle}>Share Live App</Text>
+                  <Text style={styles.shareOptionDesc}>Share the deployed app link</Text>
+                </View>
+              </TouchableOpacity>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Inline AI Modal - Fixed */}
+      <Modal
+        visible={showInlineAI}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowInlineAI(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalContainer}
+          activeOpacity={1}
+          onPress={() => setShowInlineAI(false)}
+        >
+          <TouchableOpacity 
+            activeOpacity={1} 
+            onPress={(e) => e.stopPropagation()}
+            style={styles.inlineAIModal}
+          >
+            <TextInput
+              style={styles.inlineAIInput}
+              placeholder="Add a dark mode toggle, navigation bar, or any feature..."
+              placeholderTextColor={Colors.gray}
+              value={inlineAIPrompt}
+              onChangeText={setInlineAIPrompt}
+              autoFocus
+              onSubmitEditing={() => {
+                if (!aiLoading && inlineAIPrompt.trim()) {
+                  handleInlineAI();
+                }
+              }}
+              editable={!aiLoading}
+            />
+            <TouchableOpacity 
+              onPress={() => {
+                if (!aiLoading && inlineAIPrompt.trim()) {
+                  handleInlineAI();
+                }
+              }}
+              disabled={aiLoading || !inlineAIPrompt.trim()}
+              style={styles.inlineAISendButton}
+            >
+              {aiLoading ? (
+                <ActivityIndicator size="small" color={Colors.primary} />
+              ) : (
+                <Ionicons 
+                  name="send" 
+                  size={20} 
+                  color={!inlineAIPrompt.trim() ? Colors.gray : Colors.primary} 
+                />
+              )}
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Preview Modal */}
+      <Modal
+        visible={showPreview}
+        animationType="slide"
+        onRequestClose={() => setShowPreview(false)}
+      >
+        <View style={styles.previewContainer}>
+          <View style={styles.previewHeader}>
+            <Text style={styles.previewTitle}>Preview</Text>
+            <View style={styles.previewActions}>
+              <TouchableOpacity 
+                style={styles.previewActionButton}
+                onPress={generatePreview}
+              >
+                <Ionicons name="refresh" size={20} color={Colors.primary} />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.previewActionButton}
+                onPress={() => setShowDeployModal(true)}
+              >
+                <Ionicons name="cloud-upload" size={20} color={Colors.primary} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowPreview(false)}>
+                <Ionicons name="close" size={24} color={Colors.black} />
+              </TouchableOpacity>
+            </View>
+          </View>
+          {previewLoading ? (
+            <View style={styles.previewLoading}>
+              <ActivityIndicator size="large" color={Colors.primary} />
+              <Text style={styles.previewLoadingText}>Loading preview...</Text>
+            </View>
+          ) : previewError ? (
+            <View style={styles.previewError}>
+              <Ionicons name="alert-circle" size={60} color={Colors.danger} />
+              <Text style={styles.previewErrorText}>Preview Error</Text>
+              <Text style={styles.previewErrorDetail}>{previewError}</Text>
+              <TouchableOpacity style={styles.retryButton} onPress={generatePreview}>
+                <Text style={styles.retryButtonText}>Try Again</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <WebView
+              source={{ html: previewHtml }}
+              style={styles.webView}
+              javaScriptEnabled={true}
+              domStorageEnabled={true}
+              originWhitelist={['*']}
+              mixedContentMode="always"
+              onError={(syntheticEvent) => {
+                const { nativeEvent } = syntheticEvent;
+                console.warn('WebView error: ', nativeEvent);
+                setPreviewError(nativeEvent.description || 'Failed to load preview');
+              }}
+              onMessage={(event) => {
+                try {
+                  const message = JSON.parse(event.nativeEvent.data);
+                  console.log(`Preview ${message.type}:`, message.data);
+                } catch (e) {
+                  console.log('WebView message:', event.nativeEvent.data);
+                }
+              }}
+              injectedJavaScript={`
+                console.log('WebView loaded successfully');
+                true;
+              `}
+            />
+          )}
+        </View>
+      </Modal>
+
+      {/* Project Selector Modal */}
+      <Modal
+        visible={showProjectSelector}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowProjectSelector(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.projectSelector}>
+            <Text style={styles.projectSelectorTitle}>My Projects</Text>
+            <FlatList
+              data={projects}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.projectItem}
+                  onPress={() => {
+                    if (unsavedChanges) {
+                      saveCurrentFile();
+                    }
+                    setCurrentProject(item);
+                    setCurrentFile('src/App.js');
+                    setOpenFiles(['src/App.js']);
+                    setShowProjectSelector(false);
+                  }}
+                >
+                  <View style={styles.projectItemInfo}>
+                    <Text style={styles.projectItemName}>{item.name}</Text>
+                    <Text style={styles.projectItemDate}>
+                      {new Date(item.lastModified).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  {item.id === currentProject?.id && (
+                    <Ionicons name="checkmark-circle" size={24} color={Colors.primary} />
+                  )}
+                </TouchableOpacity>
+              )}
+            />
+            <TouchableOpacity
+              style={styles.newProjectButton}
+              onPress={() => {
+                setShowProjectSelector(false);
+                setShowNewProjectModal(true);
+              }}
+            >
+              <Ionicons name="add" size={20} color={Colors.white} />
+              <Text style={styles.newProjectText}>New Project</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* New Project Modal */}
+      <Modal
+        visible={showNewProjectModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowNewProjectModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.newProjectModal}>
+            <Text style={styles.modalTitle}>New Project</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Project name"
+              placeholderTextColor={Colors.gray}
+              value={newProjectName}
+              onChangeText={setNewProjectName}
+              autoFocus
+            />
             
             <View style={styles.modalActions}>
               <TouchableOpacity
                 style={styles.cancelButton}
-                onPress={() => {
-                  setShowShareModal(false);
-                  setSelectedFriends([]);
-                  setSendAsStory(false);
-                }}
+                onPress={() => setShowNewProjectModal(false)}
               >
                 <Text style={styles.cancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.shareButton}
-                onPress={shareSnippet}
+                style={[styles.createButton, generating && styles.disabledButton]}
+                onPress={createNewProject}
+                disabled={generating}
               >
-                <Text style={styles.shareText}>Share</Text>
+                {generating ? (
+                  <ActivityIndicator size="small" color={Colors.white} />
+                ) : (
+                  <Text style={styles.createText}>Create</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-    </KeyboardAvoidingView>
+
+      {/* New File Modal */}
+      <Modal
+        visible={showNewFileModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowNewFileModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.newFileModal}>
+            <Text style={styles.modalTitle}>New File</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="src/components/Button.js"
+              placeholderTextColor={Colors.gray}
+              value={newFileName}
+              onChangeText={setNewFileName}
+              autoFocus
+            />
+            <Text style={styles.fileHint}>
+              Examples: src/App.js, src/styles.css, package.json
+            </Text>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => {
+                  setNewFileName('');
+                  setShowNewFileModal(false);
+                }}
+              >
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.createButton}
+                onPress={() => createFileWithPath(newFileName)}
+              >
+                <Text style={styles.createText}>Create</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* New Folder Modal */}
+      <Modal
+        visible={showNewFolderModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowNewFolderModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.newFileModal}>
+            <Text style={styles.modalTitle}>New Folder</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="src/components/common"
+              placeholderTextColor={Colors.gray}
+              value={newFolderName}
+              onChangeText={setNewFolderName}
+              autoFocus
+            />
+            <Text style={styles.fileHint}>
+              Examples: src/components, src/utils, src/pages
+            </Text>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => {
+                  setNewFolderName('');
+                  setShowNewFolderModal(false);
+                }}
+              >
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.createButton}
+                onPress={createFolder}
+              >
+                <Text style={styles.createText}>Create</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
@@ -685,18 +1320,17 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     backgroundColor: Colors.primary,
     paddingTop: Platform.OS === 'ios' ? 50 : 30,
     paddingBottom: 15,
     paddingHorizontal: 20,
   },
-  headerTitle: {
-    fontSize: 18,
+  projectName: {
+    fontSize: 16,
     fontWeight: 'bold',
     color: Colors.white,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   headerActions: {
     flexDirection: 'row',
@@ -705,78 +1339,147 @@ const styles = StyleSheet.create({
   headerButton: {
     padding: 5,
   },
-  languageSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  tabBar: {
     backgroundColor: Colors.surface,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    maxHeight: 40,
     borderBottomWidth: 1,
     borderBottomColor: Colors.lightGray,
   },
-  languageText: {
-    color: Colors.white,
-    fontSize: 16,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  tab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderRightWidth: 1,
+    borderRightColor: Colors.lightGray,
+  },
+  activeTab: {
+    backgroundColor: Colors.background,
+  },
+  tabText: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+  },
+  activeTabText: {
+    color: Colors.text,
+  },
+  closeTab: {
+    marginLeft: 10,
+    padding: 2,
   },
   editorContainer: {
     flex: 1,
-    backgroundColor: '#1e1e1e',
+    backgroundColor: Colors.background,
+  },
+  editorWithTerminal: {
+    flex: 0.6,
+  },
+  editor: {
+    flex: 1,
   },
   editorContent: {
     flexDirection: 'row',
-    paddingVertical: 10,
   },
   lineNumbers: {
+    backgroundColor: Colors.surface,
+    paddingVertical: 10,
     paddingHorizontal: 10,
-    paddingRight: 5,
     borderRightWidth: 1,
-    borderRightColor: '#333',
+    borderRightColor: Colors.lightGray,
   },
   lineNumber: {
+    color: Colors.textSecondary,
     fontSize: 14,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     lineHeight: 20,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   codeInput: {
     flex: 1,
+    color: Colors.text,
     fontSize: 14,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     lineHeight: 20,
-    paddingHorizontal: 10,
-    minWidth: 1000, // Ensure horizontal scrolling works
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    padding: 10,
+    textAlignVertical: 'top',
   },
-  suggestionsContainer: {
-    backgroundColor: Colors.surface,
-    padding: 15,
+  terminalContainer: {
+    backgroundColor: Colors.background,
     borderTopWidth: 1,
     borderTopColor: Colors.lightGray,
   },
-  suggestionsTitle: {
-    color: Colors.textSecondary,
-    fontSize: 12,
-    marginBottom: 10,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  inlineAIButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    backgroundColor: Colors.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 25,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
   },
-  suggestionChip: {
-    backgroundColor: Colors.primary + '20',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 15,
-    marginRight: 10,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-  },
-  suggestionText: {
+  inlineAIText: {
     color: Colors.primary,
-    fontSize: 14,
+    marginLeft: 8,
     fontWeight: 'bold',
   },
-  suggestionLang: {
-    color: Colors.primary + '80',
-    fontSize: 11,
-    marginTop: 2,
+  fileExplorer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    bottom: 0,
+    width: screenWidth * 0.75,
+    backgroundColor: Colors.surface,
+    shadowColor: '#000',
+    shadowOffset: { width: 2, height: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+    zIndex: 1000,
+  },
+  fileExplorerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.lightGray,
+  },
+  fileExplorerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: Colors.text,
+  },
+  fileActions: {
+    flexDirection: 'row',
+    gap: 15,
+  },
+  fileActionButton: {
+    padding: 5,
+  },
+  fileItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingRight: 20,
+  },
+  fileName: {
+    marginLeft: 10,
+    color: Colors.text,
+    fontSize: 14,
+  },
+  activeFileName: {
+    color: Colors.primary,
+    fontWeight: 'bold',
+  },
+  unsavedIndicator: {
+    color: Colors.warning,
+    marginLeft: 5,
+    fontSize: 16,
   },
   modalContainer: {
     flex: 1,
@@ -784,26 +1487,242 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 20,
   },
-  modalContent: {
+  aiPanel: {
     backgroundColor: Colors.surface,
     borderRadius: 15,
     padding: 20,
-    maxHeight: '80%',
   },
-  shareModalContent: {
+  aiHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  aiTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: Colors.text,
+  },
+  aiLabel: {
+    fontSize: 16,
+    color: Colors.text,
+    marginBottom: 10,
+  },
+  aiInput: {
+    backgroundColor: Colors.background,
+    borderRadius: 10,
+    padding: 15,
+    color: Colors.text,
+    fontSize: 16,
+    minHeight: 100,
+    marginBottom: 20,
+  },
+  generateButton: {
+    backgroundColor: Colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 15,
+    borderRadius: 10,
+    gap: 10,
+  },
+  disabledButton: {
+    opacity: 0.6,
+  },
+  generateText: {
+    color: Colors.white,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  deployModal: {
     backgroundColor: Colors.surface,
     borderRadius: 15,
     padding: 20,
-    maxHeight: '90%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: Colors.text,
+  },
+  deployInfo: {
+    fontSize: 14,
+    color: Colors.textSecondary,
     marginBottom: 20,
+  },
+  deployButton: {
+    backgroundColor: Colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 15,
+    borderRadius: 10,
+    gap: 10,
+    marginTop: 10,
+  },
+  deployButtonText: {
+    color: Colors.white,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  deployedInfo: {
+    marginTop: 20,
+    padding: 15,
+    backgroundColor: Colors.background,
+    borderRadius: 10,
+  },
+  deployedLabel: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginBottom: 5,
+  },
+  deployedUrl: {
+    fontSize: 14,
+    color: Colors.primary,
+    marginBottom: 10,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
-  languageItem: {
+  shareUrlButton: {
+    backgroundColor: Colors.primary,
+    padding: 10,
+    borderRadius: 5,
+    alignItems: 'center',
+  },
+  shareUrlText: {
+    color: Colors.white,
+    fontWeight: 'bold',
+  },
+  shareModal: {
+    backgroundColor: Colors.surface,
+    borderRadius: 15,
+    padding: 20,
+  },
+  shareOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 15,
+    backgroundColor: Colors.background,
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  shareOptionText: {
+    marginLeft: 15,
+    flex: 1,
+  },
+  shareOptionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: Colors.text,
+  },
+  shareOptionDesc: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  inlineAIModal: {
+    backgroundColor: Colors.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 15,
+    borderRadius: 10,
+    marginHorizontal: 20,
+  },
+  inlineAIInput: {
+    flex: 1,
+    color: Colors.text,
+    fontSize: 16,
+    marginRight: 10,
+  },
+  inlineAISendButton: {
+    padding: 5,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewContainer: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+  previewHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    paddingTop: Platform.OS === 'ios' ? 50 : 20,
+    backgroundColor: Colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.lightGray,
+  },
+  previewTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  previewActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 15,
+  },
+  previewActionButton: {
+    padding: 5,
+  },
+  previewLoading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewLoadingText: {
+    marginTop: 10,
+    color: Colors.textSecondary,
+  },
+  webView: {
+    flex: 1,
+  },
+  previewError: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  previewErrorText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: Colors.danger,
+    marginTop: 20,
+  },
+  previewErrorDetail: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  retryButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginTop: 20,
+  },
+  retryButtonText: {
+    color: Colors.white,
+    fontWeight: 'bold',
+  },
+  projectSelector: {
+    backgroundColor: Colors.surface,
+    borderRadius: 15,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  projectSelectorTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: Colors.text,
+    marginBottom: 20,
+  },
+  projectItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -811,77 +1730,46 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.lightGray,
   },
-  languageName: {
+  projectItemInfo: {
+    flex: 1,
+  },
+  projectItemName: {
     fontSize: 16,
     color: Colors.text,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-  },
-  languageExt: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-  },
-  aiPromptInput: {
-    borderWidth: 1,
-    borderColor: Colors.lightGray,
-    borderRadius: 10,
-    padding: 15,
-    minHeight: 100,
-    maxHeight: 200,
-    color: Colors.text,
-    fontSize: 16,
-    marginBottom: 20,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-  },
-  titleInput: {
-    borderWidth: 1,
-    borderColor: Colors.lightGray,
-    borderRadius: 10,
-    padding: 15,
-    color: Colors.text,
-    fontSize: 16,
-    marginBottom: 10,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-  },
-  descriptionInput: {
-    borderWidth: 1,
-    borderColor: Colors.lightGray,
-    borderRadius: 10,
-    padding: 15,
-    color: Colors.text,
-    fontSize: 16,
-    marginBottom: 20,
-    minHeight: 80,
-    maxHeight: 120,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-  },
-  friendsTitle: {
-    fontSize: 16,
     fontWeight: 'bold',
-    color: Colors.text,
-    marginBottom: 10,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
-  friendsList: {
-    maxHeight: 200,
-    marginBottom: 20,
+  projectItemDate: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 4,
   },
-  friendItem: {
+  newProjectButton: {
+    backgroundColor: Colors.primary,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.lightGray,
+    justifyContent: 'center',
+    padding: 15,
+    borderRadius: 10,
+    marginTop: 20,
+    gap: 10,
   },
-  selectedFriend: {
-    backgroundColor: Colors.primary + '20',
-  },
-  friendName: {
-    marginLeft: 10,
+  newProjectText: {
+    color: Colors.white,
     fontSize: 16,
+    fontWeight: 'bold',
+  },
+  newProjectModal: {
+    backgroundColor: Colors.surface,
+    borderRadius: 15,
+    padding: 20,
+  },
+  input: {
+    backgroundColor: Colors.background,
+    borderRadius: 10,
+    padding: 15,
     color: Colors.text,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 16,
+    marginBottom: 20,
   },
   modalActions: {
     flexDirection: 'row',
@@ -891,71 +1779,40 @@ const styles = StyleSheet.create({
   cancelButton: {
     flex: 1,
     backgroundColor: Colors.lightGray,
-    paddingVertical: 12,
+    padding: 15,
     borderRadius: 10,
     alignItems: 'center',
   },
   cancelText: {
     color: Colors.text,
     fontWeight: 'bold',
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
-  generateButton: {
+  createButton: {
     flex: 1,
     backgroundColor: Colors.primary,
-    paddingVertical: 12,
+    padding: 15,
     borderRadius: 10,
     alignItems: 'center',
   },
-  generateText: {
-    color: Colors.background,
+  createText: {
+    color: Colors.white,
     fontWeight: 'bold',
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
-  shareButton: {
-    flex: 1,
-    backgroundColor: Colors.primary,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
+  newFileModal: {
+    backgroundColor: Colors.surface,
+    borderRadius: 15,
+    padding: 20,
   },
-  storyOption: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  padding: 15,
-  backgroundColor: Colors.primary + '10',
-  borderRadius: 10,
-  marginBottom: 20,
-  borderWidth: 1,
-  borderColor: Colors.primary + '30',
-},
-storyOptionSelected: {
-  backgroundColor: Colors.primary + '30',
-  borderColor: Colors.primary,
-},
-storyText: {
-  flex: 1,
-  marginLeft: 10,
-  fontSize: 16,
-  color: Colors.text,
-  fontWeight: '600',
-},
-  headerCenter: {
-    alignItems: 'center',
-  },
-  limitText: {
+  fileHint: {
     fontSize: 12,
-    color: Colors.white + '80',
-    marginTop: 2,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    color: Colors.textSecondary,
+    marginTop: 5,
+    marginBottom: 20,
   },
-  shareText: {
-    color: Colors.background,
-    fontWeight: 'bold',
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  warning: {
+    color: '#FFA500',
   },
-  disabledButton: {
-    opacity: 0.6,
+  danger: {
+    color: '#FF0000',
   },
 });

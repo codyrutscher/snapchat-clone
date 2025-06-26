@@ -4,36 +4,44 @@ import { auth, db, storage } from '../firebase';
 
 class AppDeployService {
   async deployApp(project) {
+    console.log('=== Starting App Deployment ===');
     try {
       // Generate production HTML
+      console.log('Generating production HTML...');
       const previewHtml = this.generateProductionHtml(project);
+      console.log('HTML generated, length:', previewHtml.length);
       
       // Create a unique filename
       const timestamp = Date.now();
       const fileName = `apps/${project.id}_${timestamp}.html`;
+      console.log('Filename:', fileName);
       
       // Create storage reference
       const storageRef = ref(storage, fileName);
       
-      // Upload HTML directly as a string with data_url format
-      // This avoids any blob/buffer issues
-      const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(previewHtml);
-      
       try {
-        // Try uploadString with raw format first
-        await uploadString(storageRef, previewHtml, 'raw', {
-          contentType: 'text/html;charset=utf-8'
-        });
+        console.log('Uploading to Firebase Storage...');
+        // Upload as raw string - this should work without blob issues
+        await uploadString(storageRef, previewHtml, 'raw');
+        console.log('Upload successful!');
       } catch (uploadError) {
-        console.log('Raw upload failed, trying base64:', uploadError);
-        // If raw fails, try base64
-        const base64 = btoa(previewHtml);
-        await uploadString(storageRef, base64, 'base64', {
-          contentType: 'text/html;charset=utf-8'
-        });
+        console.error('Upload error:', uploadError);
+        // If raw fails, try a different approach
+        try {
+          console.log('Trying data_url format...');
+          const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent(previewHtml)}`;
+          await uploadString(storageRef, dataUrl, 'data_url');
+          console.log('Data URL upload successful!');
+        } catch (secondError) {
+          console.error('Second upload attempt failed:', secondError);
+          throw uploadError;
+        }
       }
       
+      // Get download URL
+      console.log('Getting download URL...');
       const deployUrl = await getDownloadURL(storageRef);
+      console.log('Deploy URL:', deployUrl);
       
       // Save app metadata to Firestore (without file data to avoid size issues)
       const appData = {
@@ -50,8 +58,10 @@ class AppDeployService {
         public: true
       };
       
+      console.log('Saving to Firestore...');
       // Save to Firestore
       const appRef = await addDoc(collection(db, 'deployedApps'), appData);
+      console.log('Saved to Firestore with ID:', appRef.id);
       
       return {
         id: appRef.id,
@@ -59,15 +69,17 @@ class AppDeployService {
       };
     } catch (error) {
       console.error('Error in deployApp:', error);
-      // If Firebase is the issue, return a mock URL for testing
-      if (error.message.includes('blob') || error.message.includes('ArrayBuffer')) {
-        console.log('Falling back to mock deployment');
-        return {
-          id: 'mock_' + Date.now(),
-          url: 'https://devchat-preview.web.app/demo.html'
-        };
-      }
-      throw error;
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+      
+      // Return a local preview URL as fallback
+      console.log('Falling back to local preview');
+      const localPreviewUrl = `data:text/html;charset=utf-8,${encodeURIComponent(this.generateProductionHtml(project))}`;
+      return {
+        id: 'local_' + Date.now(),
+        url: localPreviewUrl,
+        isLocal: true
+      };
     }
   }
 

@@ -18,7 +18,7 @@ class VirtualFileSystem {
     }
   }
 
-  async createProject(name, template = 'react') {
+  async createProject(name, template = 'general') {
     const projectId = `project_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     const defaultFiles = this.getDefaultTemplate(template);
@@ -70,7 +70,18 @@ async getInstalledPackages(projectId) {
 }
 
   getDefaultTemplate(template) {
-    if (template === 'react') {
+    if (template === 'general') {
+      return {
+        'README.md': {
+          content: `# ${template} Project\n\nWelcome to your new project!\n\n## Getting Started\n\nStart coding by creating new files and folders.`,
+          language: 'markdown'
+        },
+        'main.js': {
+          content: '// Main JavaScript file\nconsole.log("Hello, World!");',
+          language: 'javascript'
+        }
+      };
+    } else if (template === 'react') {
       return {
         'src/App.js': {
           content: `import React, { useState } from 'react';

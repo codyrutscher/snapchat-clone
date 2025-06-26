@@ -441,30 +441,32 @@ export default function CameraScreen({ navigation }) {
         style={styles.editContainer}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={[styles.previewContainer, getBackgroundStyle()]}>
-          <View style={[styles.mediaWrapper, getBorderStyle()]}>
-            {mediaType === 'video' ? (
-              <Video
-                source={{ uri: capturedMedia }}
-                style={styles.previewImage}
-                shouldPlay
-                isLooping
-                resizeMode="contain"
-                isMuted={false}
-                volume={0.5}
-              />
-            ) : (
-              <Image source={{ uri: capturedMedia }} style={styles.previewImage} />
-            )}
+        <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
+          <View style={[styles.previewContainer, getBackgroundStyle()]}>
+            <View style={[styles.mediaWrapper, getBorderStyle()]}>
+              {mediaType === 'video' ? (
+                <Video
+                  source={{ uri: capturedMedia }}
+                  style={styles.previewImage}
+                  shouldPlay
+                  isLooping
+                  resizeMode="contain"
+                  isMuted={false}
+                  volume={0.5}
+                />
+              ) : (
+                <Image source={{ uri: capturedMedia }} style={styles.previewImage} />
+              )}
+            </View>
           </View>
           
-          {/* Caption overlay */}
+          {/* Caption below image Instagram-style */}
           {captionText && (
-            <View style={styles.captionOverlay}>
-              <Text style={styles.captionText}>{captionText}</Text>
+            <View style={styles.captionContainerBelow}>
+              <Text style={styles.captionTextBelow}>{captionText}</Text>
             </View>
           )}
-        </View>
+        </ScrollView>
 
         <View style={styles.editControls}>
           <TouchableOpacity style={styles.closeButton} onPress={resetCamera}>
@@ -884,7 +886,8 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingBottom: 200,
+    paddingBottom: 20,
+    paddingTop: 80,
   },
   mediaWrapper: {
     width: '85%',
@@ -1009,6 +1012,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 10,
+  },
+  scrollContainer: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+  },
+  captionContainerBelow: {
+    backgroundColor: 'white',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  captionTextBelow: {
+    color: Colors.black,
+    fontSize: 16,
+    lineHeight: 22,
   },
   
   // Send modal styles

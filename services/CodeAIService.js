@@ -11,38 +11,44 @@ class CodeAIService {
 
   async generateReactApp(prompt, existingFiles = {}) {
     try {
-      const systemPrompt = `You are an expert React developer. Generate a complete, production-ready React application with proper file structure.
+      const systemPrompt = `You are an expert React developer. Generate a complete, working React application.
 
-IMPORTANT: Return ONLY a valid JSON object with this exact structure, no other text:
+IMPORTANT: Return ONLY a valid JSON object with this exact structure:
 {
   "projectName": "descriptive-name",
   "description": "what the app does",
   "files": {
-    "src/App.js": "main App component",
-    "src/App.css": "app styles",
-    "src/components/ComponentName/ComponentName.js": "component code",
-    "src/components/ComponentName/ComponentName.css": "component styles",
-    "src/pages/PageName/PageName.js": "page component",
-    "src/utils/helpers.js": "utility functions",
-    "src/services/api.js": "API service layer"
-  },
-  "dependencies": ["react", "react-dom", "any-other-packages"],
-  "instructions": "how to use the app"
+    "src/App.js": "FULL CODE HERE",
+    "src/App.css": "FULL CSS HERE",
+    "src/components/ComponentName.js": "FULL COMPONENT CODE",
+    "README.md": "FULL README CONTENT"
+  }
 }
 
 Requirements:
-- Create a proper folder structure with components/, pages/, utils/, services/ as needed
-- Each component should be in its own folder with its CSS file
-- Use functional components with hooks
-- Include proper error handling
-- Add loading states where appropriate
-- Make components reusable and modular
-- Structure the app with proper separation of concerns
-- Add comments for complex logic
-- Follow React best practices
-- Import components properly in App.js`;
+- Use ONLY React.useState, NO external libraries
+- Create all necessary files with COMPLETE working code
+- Use inline styles or CSS files, no CSS frameworks
+- Make it fully functional without any npm packages
+- Include proper state management with useState
+- Add event handlers and user interactions
+- Make the UI look good with custom CSS
+- Return the ACTUAL CODE, not placeholders
+- Everything should work immediately without setup`;
 
-      const userPrompt = `Create a React app: ${prompt}`;
+      const userPrompt = `Create this app: ${prompt}
+
+Example for a todo app, you would return:
+{
+  "projectName": "todo-app",
+  "description": "A simple todo list application",
+  "files": {
+    "src/App.js": "import React, { useState } from 'react';\\nimport './App.css';\\n\\nfunction App() {\\n  const [todos, setTodos] = useState([]);\\n  const [input, setInput] = useState('');\\n\\n  const addTodo = () => {\\n    if (input.trim()) {\\n      setTodos([...todos, { id: Date.now(), text: input, done: false }]);\\n      setInput('');\\n    }\\n  };\\n\\n  const toggleTodo = (id) => {\\n    setTodos(todos.map(todo => \\n      todo.id === id ? { ...todo, done: !todo.done } : todo\\n    ));\\n  };\\n\\n  const deleteTodo = (id) => {\\n    setTodos(todos.filter(todo => todo.id !== id));\\n  };\\n\\n  return (\\n    <div className=\\"App\\">\\n      <h1>Todo List</h1>\\n      <div className=\\"input-container\\">\\n        <input\\n          type=\\"text\\"\\n          value={input}\\n          onChange={(e) => setInput(e.target.value)}\\n          onKeyPress={(e) => e.key === 'Enter' && addTodo()}\\n          placeholder=\\"Add a new todo...\\"\\n        />\\n        <button onClick={addTodo}>Add</button>\\n      </div>\\n      <ul className=\\"todo-list\\">\\n        {todos.map(todo => (\\n          <li key={todo.id} className={todo.done ? 'done' : ''}>\\n            <span onClick={() => toggleTodo(todo.id)}>{todo.text}</span>\\n            <button onClick={() => deleteTodo(todo.id)}>Delete</button>\\n          </li>\\n        ))}\\n      </ul>\\n    </div>\\n  );\\n}\\n\\nexport default App;",
+    "src/App.css": ".App {\\n  max-width: 600px;\\n  margin: 0 auto;\\n  padding: 20px;\\n}\\n\\nh1 {\\n  text-align: center;\\n  color: #333;\\n}\\n\\n.input-container {\\n  display: flex;\\n  margin-bottom: 20px;\\n}\\n\\ninput {\\n  flex: 1;\\n  padding: 10px;\\n  font-size: 16px;\\n  border: 1px solid #ddd;\\n  border-radius: 4px 0 0 4px;\\n}\\n\\nbutton {\\n  padding: 10px 20px;\\n  font-size: 16px;\\n  background: #007bff;\\n  color: white;\\n  border: none;\\n  border-radius: 0 4px 4px 0;\\n  cursor: pointer;\\n}\\n\\n.todo-list {\\n  list-style: none;\\n  padding: 0;\\n}\\n\\n.todo-list li {\\n  display: flex;\\n  justify-content: space-between;\\n  align-items: center;\\n  padding: 10px;\\n  margin-bottom: 8px;\\n  background: #f8f9fa;\\n  border-radius: 4px;\\n}\\n\\n.todo-list li.done span {\\n  text-decoration: line-through;\\n  color: #6c757d;\\n}\\n\\n.todo-list li span {\\n  cursor: pointer;\\n  flex: 1;\\n}\\n\\n.todo-list li button {\\n  background: #dc3545;\\n  border-radius: 4px;\\n  padding: 5px 10px;\\n  font-size: 14px;\\n}"
+  }
+}
+
+Remember to return COMPLETE WORKING CODE!`;
 
       const completion = await this.openai.chat.completions.create({
         model: "gpt-3.5-turbo",
@@ -73,10 +79,43 @@ Requirements:
 
   async modifyCode({ code, instruction, filePath }) {
     try {
-      const systemPrompt = `You are an expert React developer. Modify the provided code according to the instruction.
-Return only the modified code without explanations or markdown code blocks.
-Maintain the existing code style and structure.
-Ensure the modified code is working and follows best practices.`;
+      // Determine file type from extension
+      const fileExt = filePath.split('.').pop().toLowerCase();
+      let expertise = 'programmer';
+      
+      switch(fileExt) {
+        case 'css':
+        case 'scss':
+        case 'sass':
+          expertise = 'CSS/styling expert';
+          break;
+        case 'html':
+          expertise = 'HTML expert';
+          break;
+        case 'md':
+        case 'markdown':
+          expertise = 'documentation writer';
+          break;
+        case 'json':
+          expertise = 'JSON configuration expert';
+          break;
+        case 'js':
+        case 'jsx':
+        case 'ts':
+        case 'tsx':
+          expertise = 'JavaScript/React developer';
+          break;
+        case 'py':
+          expertise = 'Python developer';
+          break;
+        default:
+          expertise = 'expert programmer';
+      }
+      
+      const systemPrompt = `You are an ${expertise}. Modify the provided ${fileExt} file according to the instruction.
+Return ONLY the complete modified code without any explanations, comments about changes, or markdown code blocks.
+If the file is empty or new, create appropriate content based on the instruction.
+Maintain proper syntax and best practices for ${fileExt} files.`;
 
       const userPrompt = `File: ${filePath}
 
@@ -134,38 +173,98 @@ Use simple language that a developer can understand.`;
     }
   }
 
+  async generateApp(prompt) {
+    // Alias for generateReactApp but for any language
+    return this.generateReactApp(prompt);
+  }
+
   async addFeature({ projectFiles, featureDescription }) {
     try {
-      const systemPrompt = `You are an expert React developer. Add the requested feature to the existing React app.
+      const systemPrompt = `You are an expert full-stack developer with FULL understanding of the entire codebase. 
+You MUST analyze all existing files to understand the project structure, naming conventions, and how files interact.
 
-IMPORTANT: Return ONLY a valid JSON object with this exact structure, no other text:
+IMPORTANT: Return ONLY a valid JSON object with this exact structure:
 {
   "modifiedFiles": {
-    "filePath": "updated code content here"
+    "filePath": "COMPLETE updated code content here"
   },
   "newFiles": {
-    "filePath": "new file content here"
+    "filePath": "COMPLETE CONTENT HERE - NEVER EMPTY!"
   },
-  "dependencies": ["new-package-if-needed"],
   "explanation": "what was added and how to use it"
 }
 
-When creating new components:
-- Put them in appropriate folders (src/components/, src/pages/, etc.)
-- Import them properly in files that use them
-- Include any necessary CSS files
-- Follow React best practices`;
+CRITICAL CROSS-FILE RULES:
+1. ANALYZE the existing code to understand:
+   - What classNames and IDs are used in JSX/HTML/components
+   - What components exist and how they're structured
+   - Import/export patterns used in the project
+   - File organization and naming conventions
+   - Current styling approach (CSS, SCSS, styled-components, etc.)
+   - Configuration files and their impact
+   - Service/utility files and their usage patterns
+
+2. INTEGRATE new code properly:
+   - CSS/SCSS files MUST target actual classNames/IDs used in component files
+   - New components MUST be imported where they're used
+   - New utilities/services MUST be imported by components that need them
+   - Follow the EXACT import style already used in the project
+   - Maintain consistent naming with existing files
+   - Place files in appropriate directories matching project structure
+   - Update configuration files if needed (package.json, tsconfig, etc.)
+
+3. PRESERVE existing functionality:
+   - When modifying files, keep ALL existing code/imports
+   - Only ADD to files, don't remove existing features
+   - Ensure new code doesn't break existing code
+   - Maintain type safety if using TypeScript
+
+4. COMPLETE content for ALL files:
+   - CSS/SCSS: Full styles that match elements in component files
+   - Components: Working code with proper imports/exports
+   - Utils/Services: Fully functional code with exports
+   - Hooks: Proper React hooks with correct dependencies
+   - Config files: Valid JSON/YAML/etc structure
+   - Type definitions: Complete TypeScript interfaces/types
+   - Documentation: Comprehensive MD files`;
 
       // Get current App.js content to understand imports
       const appJsContent = projectFiles['src/App.js']?.content || '';
       
+      // Get ALL file contents for complete context
+      const relevantFiles = {};
+      Object.entries(projectFiles).forEach(([path, file]) => {
+        // Include ALL code-related files for full cross-file understanding
+        if (path.match(/\.(js|jsx|ts|tsx|css|scss|sass|less|json|md|yml|yaml|html|xml|txt|env|config|conf)$/i)) {
+          relevantFiles[path] = file.content || '';
+        }
+      });
+      
       const userPrompt = `Add this feature to the app: ${featureDescription}
 
-Current App.js:
-${appJsContent}
+Current project structure and relevant files:
 
-Current project files:
-${Object.keys(projectFiles).join('\n')}`;
+${Object.entries(relevantFiles).map(([path, content]) => 
+  `=== ${path} ===\n${content}\n`
+).join('\n')}
+
+IMPORTANT: 
+- When creating CSS, analyze the classNames and IDs used in JS/JSX files
+- When creating components, properly import them in App.js
+- When modifying App.js, preserve existing functionality
+- Ensure all files work together
+
+Example for "create Testimonials component":
+{
+  "newFiles": {
+    "src/components/Testimonials.js": "import React from 'react';\\nimport './Testimonials.css';\\n\\nfunction Testimonials() {\\n  const testimonials = [\\n    { id: 1, name: 'John Doe', text: 'Great app!' },\\n    { id: 2, name: 'Jane Smith', text: 'Love it!' }\\n  ];\\n\\n  return (\\n    <div className=\\"testimonials\\">\\n      <h2>Testimonials</h2>\\n      {testimonials.map(t => (\\n        <div key={t.id} className=\\"testimonial\\">\\n          <p>\\"{t.text}\\"</p>\\n          <p className=\\"author\\">- {t.name}</p>\\n        </div>\\n      ))}\\n    </div>\\n  );\\n}\\n\\nexport default Testimonials;",
+    "src/components/Testimonials.css": ".testimonials {\\n  margin: 40px 0;\\n  padding: 20px;\\n  background: #f5f5f5;\\n  border-radius: 8px;\\n}\\n\\n.testimonials h2 {\\n  text-align: center;\\n  margin-bottom: 20px;\\n}\\n\\n.testimonial {\\n  margin: 15px 0;\\n  padding: 15px;\\n  background: white;\\n  border-radius: 4px;\\n  box-shadow: 0 2px 4px rgba(0,0,0,0.1);\\n}\\n\\n.author {\\n  text-align: right;\\n  font-style: italic;\\n  color: #666;\\n}"
+  },
+  "modifiedFiles": {
+    "src/App.js": "[Full App.js content with: import Testimonials from './components/Testimonials'; added at top and <Testimonials /> added in the JSX]"
+  },
+  "explanation": "Created Testimonials component with styling and imported it into App.js"
+}`;
 
       const completion = await this.openai.chat.completions.create({
         model: "gpt-3.5-turbo",

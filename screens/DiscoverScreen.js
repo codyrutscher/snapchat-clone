@@ -114,65 +114,70 @@ export default function DiscoverScreen({ navigation }) {
     }
   };
 
+
+  const openApp = async (app) => {
+  try {
+    // Record view
+    await updateDoc(doc(db, 'deployedApps', app.id), {
+      views: (app.views || 0) + 1
+    });
+    
+    // Navigate to code editor with the app data
+    navigation.navigate('CodeEditor', {
+      importApp: {
+        id: app.id,
+        name: app.name,
+        projectId: app.projectId,
+        deployUrl: app.deployUrl
+      }
+    });
+  } catch (error) {
+    console.error('Error opening app:', error);
+    Alert.alert('Error', 'Failed to open app');
+  }
+};
+
   const loadCodeStories = async () => {
   try {
-    const now = new Date();
+    console.log('Loading published apps...');
     
-    console.log('Loading code stories with language filter:', selectedLanguage);
-    
-    // First get all code stories without ordering
-    let q = query(
-      collection(db, 'snaps'),
-      where('type', '==', 'story'),
-      where('contentType', '==', 'code')
+    // Query for published apps instead of code snippets
+    const appsQuery = query(
+      collection(db, 'deployedApps'),
+      where('public', '==', true),
+      orderBy('createdAt', 'desc'),
+      limit(50)
     );
 
-    const snapshot = await getDocs(q);
-    const codeStories = [];
+    const snapshot = await getDocs(appsQuery);
+    const apps = [];
     
     for (const doc of snapshot.docs) {
       const data = doc.data();
       
-      console.log('Story data:', {
-        id: doc.id,
-        language: data.language,
-        title: data.title,
-        contentType: data.contentType
-      });
-      
-      // Skip expired stories
-      if (new Date(data.expiresAt) < now) continue;
-      
-      // Filter by language if not 'all'
-      if (selectedLanguage !== 'all' && data.language !== selectedLanguage) {
-        console.log(`Filtering out ${data.language} story because selected is ${selectedLanguage}`);
-        continue; // Skip this story if it doesn't match the selected language
-      }
-      
       // Check if user liked
       const likeQuery = query(
-        collection(db, 'snapEngagement'),
-        where('snapId', '==', doc.id),
+        collection(db, 'appEngagement'),
+        where('appId', '==', doc.id),
         where('userId', '==', auth.currentUser.uid),
         where('type', '==', 'like')
       );
       const likeDocs = await getDocs(likeQuery);
       
-      codeStories.push({
+      apps.push({
         id: doc.id,
         ...data,
-        userLiked: !likeDocs.empty
+        userLiked: !likeDocs.empty,
+        views: data.views || 0,
+        likes: data.likes || 0,
+        forks: data.forks || 0
       });
     }
     
-    console.log(`Found ${codeStories.length} ${selectedLanguage} stories`);
-    
-    // Sort by timestamp on the client side
-    codeStories.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    
-    return codeStories;
+    console.log(`Found ${apps.length} published apps`);
+    return apps;
   } catch (error) {
-    console.error('Error loading code stories:', error);
+    console.error('Error loading apps:', error);
     return [];
   }
 };
@@ -372,35 +377,54 @@ export default function DiscoverScreen({ navigation }) {
     </TouchableOpacity>
   );
 
-  const renderCodeItem = ({ item }) => (
-    <TouchableOpacity style={styles.codeItem} onPress={() => viewCodeSnippet(item)}>
-      <View style={styles.codeItemHeader}>
-        <View style={styles.languageBadge}>
-          <Text style={styles.languageBadgeText}>{item.language}</Text>
+  const renderAppItem = ({ item }) => {
+    const isOwnProject = item.owner === auth.currentUser?.uid;
+    
+    return (
+      <TouchableOpacity 
+        style={[styles.appItem, isOwnProject && styles.ownAppItem]} 
+        onPress={() => !isOwnProject && openApp(item)}
+        disabled={isOwnProject}
+      >
+        <View style={styles.appHeader}>
+          <View style={styles.appInfo}>
+            <Text style={styles.appName} numberOfLines={1}>
+              {item.name}
+            </Text>
+            <Text style={styles.appAuthor}>
+              by {item.ownerName} {isOwnProject && '(You)'}
+            </Text>
+          </View>
+          {item.userLiked && (
+            <Ionicons name="heart" size={20} color="#FF6B6B" />
+          )}
         </View>
-        {item.userLiked && (
-          <Ionicons name="heart" size={16} color="#FF6B6B" />
-        )}
-      </View>
-      <Text style={styles.codeTitle} numberOfLines={1}>
-        {item.title || 'Untitled'}
-      </Text>
-      <Text style={styles.codeDescription} numberOfLines={2}>
-        {item.description || `${item.metadata?.linesOfCode || 0} lines of ${item.language} code`}
-      </Text>
-      <View style={styles.codeStats}>
-        <View style={styles.statItem}>
-          <Ionicons name="eye" size={14} color={Colors.gray} />
-          <Text style={styles.statText}>{item.views || 0}</Text>
+        
+        <Text style={styles.appDescription} numberOfLines={2}>
+          {item.description}
+        </Text>
+        
+        <View style={styles.appStats}>
+          <View style={styles.statItem}>
+            <Ionicons name="eye" size={14} color={Colors.gray} />
+            <Text style={styles.statText}>{item.views || 0}</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Ionicons name="heart" size={14} color={Colors.gray} />
+            <Text style={styles.statText}>{item.likes || 0}</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Ionicons name="git-branch" size={14} color={Colors.gray} />
+            <Text style={styles.statText}>{item.forks || 0} forks</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Ionicons name="document-text" size={14} color={Colors.gray} />
+            <Text style={styles.statText}>{item.fileCount} files</Text>
+          </View>
         </View>
-        <View style={styles.statItem}>
-          <Ionicons name="heart" size={14} color={Colors.gray} />
-          <Text style={styles.statText}>{item.likes || 0}</Text>
-        </View>
-        <Text style={styles.codeAuthor}>by {item.username}</Text>
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -465,27 +489,27 @@ export default function DiscoverScreen({ navigation }) {
       ) : (
         activeTab === 'code' ? (
           <FlatList
-            key="code-list"
-            data={codeContent}
-            renderItem={renderCodeItem}
-            keyExtractor={(item) => item.id}
-            numColumns={1}
-            contentContainerStyle={styles.codeListContainer}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                colors={[Colors.primary]}
-              />
-            }
-            ListEmptyComponent={() => (
-              <View style={styles.emptyContainer}>
-                <Ionicons name="code-slash-outline" size={60} color={Colors.gray} />
-                <Text style={styles.emptyText}>No code snippets yet</Text>
-                <Text style={styles.emptySubtext}>Be the first to share code!</Text>
-              </View>
-            )}
-          />
+  key="app-list"
+  data={codeContent}
+  renderItem={renderAppItem}  // Changed from renderCodeItem
+  keyExtractor={(item) => item.id}
+  numColumns={1}
+  contentContainerStyle={styles.codeListContainer}
+  refreshControl={
+    <RefreshControl
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+      colors={[Colors.primary]}
+    />
+  }
+  ListEmptyComponent={() => (
+    <View style={styles.emptyContainer}>
+      <Ionicons name="apps-outline" size={60} color={Colors.gray} />
+      <Text style={styles.emptyText}>No apps published yet</Text>
+      <Text style={styles.emptySubtext}>Be the first to share an app!</Text>
+    </View>
+  )}
+/>
         ) : (
           <FlatList
             key="snap-grid"
@@ -791,51 +815,53 @@ const styles = StyleSheet.create({
     color: Colors.gray,
     marginTop: 5,
   },
-  codeItem: {
-    backgroundColor: Colors.white,
-    padding: 15,
-    marginVertical: 5,
-    marginHorizontal: 10,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  codeItemHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  languageBadge: {
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  languageBadgeText: {
-    color: Colors.white,
-    fontSize: 12,
-    fontWeight: '600',
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-  },
-  codeTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: Colors.black,
-    marginBottom: 5,
-  },
-  codeDescription: {
-    fontSize: 14,
-    color: Colors.gray,
-    marginBottom: 10,
-  },
-  codeStats: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  appItem: {
+  backgroundColor: Colors.white,
+  padding: 15,
+  marginVertical: 5,
+  marginHorizontal: 10,
+  borderRadius: 12,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.1,
+  shadowRadius: 3,
+  elevation: 2,
+},
+ownAppItem: {
+  opacity: 0.7,
+  backgroundColor: '#f5f5f5',
+},
+appHeader: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'flex-start',
+  marginBottom: 8,
+},
+appInfo: {
+  flex: 1,
+},
+appName: {
+  fontSize: 18,
+  fontWeight: 'bold',
+  color: Colors.black,
+  marginBottom: 2,
+},
+appAuthor: {
+  fontSize: 14,
+  color: Colors.gray,
+},
+appDescription: {
+  fontSize: 14,
+  color: Colors.textSecondary,
+  marginBottom: 10,
+  lineHeight: 20,
+},
+appStats: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  gap: 15,
+},
   statItem: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -22,12 +22,11 @@ const BORDERS = [
 
 const BACKGROUNDS = [
   { id: 'none', name: 'None', color: 'transparent' },
-  { id: 'gradient1', name: 'Sunset', colors: ['#FF6B6B', '#FFE66D'] },
-  { id: 'gradient2', name: 'Ocean', colors: ['#4ECDC4', '#44A08D'] },
-  { id: 'gradient3', name: 'Purple', colors: ['#667eea', '#764ba2'] },
-  { id: 'pattern1', name: 'Stars', emoji: '⭐', color: '#1a1a2e' },
-  { id: 'pattern2', name: 'Hearts', emoji: '❤️', color: '#ffe0e0' },
-  { id: 'pattern3', name: 'Rainbow', emoji: '🌈', color: '#e3f2fd' },
+  { id: 'white', name: 'White', color: '#ffffff' },
+  { id: 'black', name: 'Black', color: '#000000' },
+  { id: 'purple', name: 'Purple', color: '#6B5CFF' },
+  { id: 'pink', name: 'Pink', color: '#FF6B6B' },
+  { id: 'blue', name: 'Blue', color: '#4ECDC4' },
 ];
 
 export default function SnapRenderer({ imageUrl, metadata, style, imageStyle, containerStyle }) {

@@ -2,20 +2,43 @@ import OpenAI from 'openai';
 import { collection, doc, getDoc, getDocs, query, where, orderBy, limit, addDoc, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { OPENAI_API_KEY } from './config';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 class OpenAIService {
   constructor() {
     try {
+      console.log('Initializing OpenAI with API key:', OPENAI_API_KEY ? 'Present' : 'Missing');
       this.openai = new OpenAI({
         apiKey: OPENAI_API_KEY,
         dangerouslyAllowBrowser: true // Only for development
       });
+      console.log('OpenAI initialized successfully');
+      
+      // Test the API connection
+      this.testAPIConnection();
     } catch (error) {
       console.error('Failed to initialize OpenAI:', error);
+      console.error('Error details:', error.message);
       this.openai = null;
     }
     this.userContext = null;
     this.conversationHistory = [];
+  }
+
+  async testAPIConnection() {
+    try {
+      console.log('Testing OpenAI API connection...');
+      const response = await this.openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [{ role: "user", content: "Say 'API working'" }],
+        max_tokens: 10
+      });
+      console.log('OpenAI API test successful:', response.choices[0].message.content);
+    } catch (error) {
+      console.error('OpenAI API test failed:', error);
+      console.error('API Error details:', error.response?.data || error.message);
+      this.openai = null; // Disable OpenAI if test fails
+    }
   }
 
   async initializeUserContext() {
@@ -69,12 +92,17 @@ class OpenAIService {
 
   async gatherComprehensiveContext() {
     try {
-      if (!auth.currentUser) return {};
+      console.log('Gathering comprehensive context for RAG...');
+      if (!auth.currentUser) {
+        console.log('No authenticated user');
+        return {};
+      }
       
       // Get user preferences
       const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
       const userData = userDoc.data() || {};
       const preferences = userData.preferences || {};
+      console.log('User preferences loaded:', Object.keys(preferences));
       
       // Analyze recent conversations
       const conversationContext = await this.analyzeRecentConversations();
@@ -85,6 +113,15 @@ class OpenAIService {
       // Analyze friend interactions
       const friendContext = await this.analyzeFriendInteractions();
       
+      // NEW: Analyze code sharing patterns for RAG
+      const codeContext = await this.analyzeCodeSharingPatterns();
+      
+      // NEW: Get recent code snippets for context
+      const recentSnippets = await this.getRecentCodeSnippets();
+      
+      console.log('Code context:', codeContext);
+      console.log('Recent snippets:', recentSnippets?.length || 0);
+      
       return {
         user: {
           username: userData.username,
@@ -93,19 +130,70 @@ class OpenAIService {
           personality: preferences.personality || 'balanced',
           humor: preferences.humor || 'mixed',
           communicationStyle: preferences.preferredChatStyle || 'casual',
-          friends: userData.friends || []
+          friends: userData.friends || [],
+          // NEW: Developer-specific preferences
+          primaryLanguages: preferences.primaryLanguages || ['javascript'],
+          frameworks: preferences.frameworks || [],
+          experienceLevel: preferences.experienceLevel || 'intermediate',
+          workSchedule: preferences.workSchedule || 'flexible',
+          preferredIDE: preferences.preferredIDE || 'vscode'
         },
         conversations: conversationContext,
         snapHistory: snapContext,
         friendships: friendContext,
+        // NEW: Code-related context
+        codePatterns: codeContext,
+        recentSnippets: recentSnippets,
         currentTime: new Date().getHours(),
         dayOfWeek: new Date().toLocaleDateString('en-US', { weekday: 'long' })
       };
     } catch (error) {
       console.error('Error gathering context:', error);
-      return {};
+      // Return default structure even on error
+      return {
+        user: {
+          username: 'Developer',
+          preferences: {},
+          interests: [],
+          personality: 'balanced',
+          humor: 'mixed',
+          communicationStyle: 'casual',
+          friends: [],
+          primaryLanguages: ['javascript'],
+          frameworks: [],
+          experienceLevel: 'intermediate',
+          workSchedule: 'flexible',
+          preferredIDE: 'vscode'
+        },
+        conversations: { recentTopics: [], activeConversations: [] },
+        snapHistory: {},
+        friendships: [],
+        codePatterns: { languages: {}, timePatterns: {} },
+        recentSnippets: [],
+        currentTime: new Date().getHours(),
+        dayOfWeek: new Date().toLocaleDateString('en-US', { weekday: 'long' })
+      };
     }
   }
+
+   async analyzeCodeTopic(code) {
+  const keywords = {
+    web: ['html', 'css', 'javascript', 'react', 'vue', 'angular', 'dom', 'browser'],
+    backend: ['api', 'server', 'database', 'sql', 'mongodb', 'express', 'node'],
+    mobile: ['react native', 'ios', 'android', 'swift', 'kotlin', 'flutter'],
+    data: ['pandas', 'numpy', 'matplotlib', 'tensorflow', 'machine learning', 'data'],
+    devops: ['docker', 'kubernetes', 'ci/cd', 'aws', 'deploy', 'pipeline'],
+    algorithms: ['algorithm', 'sort', 'search', 'complexity', 'recursion', 'dynamic programming']
+  };
+
+  for (const [topic, words] of Object.entries(keywords)) {
+    if (words.some(word => code.toLowerCase().includes(word))) {
+      return topic;
+    }
+  }
+  
+  return 'general';
+}
 
 
 async generateFullApp({ prompt, projectType, existingFiles }) {
@@ -336,24 +424,39 @@ async generateFullApp({ prompt, projectType, existingFiles }) {
   }
 
   async generateIntelligentCaptions(imageContext = {}) {
+    console.log('--- Generating Intelligent Captions ---');
     const comprehensiveContext = await this.gatherComprehensiveContext();
-    
+    console.log('Comprehensive Context:', JSON.stringify(comprehensiveContext, null, 2));
+
     if (!this.openai) {
-      return this.contextAwareFallbackCaptions(comprehensiveContext, imageContext);
+      console.log('OpenAI not available, returning empty');
+      return [];
     }
 
     try {
+      console.log('Using OpenAI API for caption generation...');
       const { filter, background, border, mediaType, recipientName } = imageContext;
       
-      // Build a rich prompt with all context
-      const systemPrompt = `You are a social media caption writer who knows the user well. 
-      User personality: ${comprehensiveContext.user.personality}
-      Humor style: ${comprehensiveContext.user.humor}
-      Communication style: ${comprehensiveContext.user.communicationStyle}
-      Interests: ${comprehensiveContext.user.interests.join(', ')}
-      Recent conversation topics: ${comprehensiveContext.conversations.recentTopics?.join(', ')}`;
+      const systemPrompt = `You are a social media caption writer who deeply understands the user's personality and coding lifestyle.
       
-      let userPrompt = `Generate 5 captions for a ${mediaType || 'photo'} snap`;
+      User Profile:
+      - Personality: ${comprehensiveContext.user.personality}
+      - Humor style: ${comprehensiveContext.user.humor}
+      - Communication: ${comprehensiveContext.user.communicationStyle}
+      - Interests: ${comprehensiveContext.user.interests.join(', ')}
+      
+      Developer Profile:
+      - Primary languages: ${comprehensiveContext.user.primaryLanguages.join(', ')}
+      - Experience: ${comprehensiveContext.user.experienceLevel}
+      - Work schedule: ${comprehensiveContext.user.workSchedule}
+      - Preferred IDE: ${comprehensiveContext.user.preferredIDE}
+      
+      Recent Activity:
+      - Most used languages: ${Object.entries(comprehensiveContext.codePatterns.languages || {}).sort((a,b) => b[1] - a[1]).slice(0,3).map(([lang]) => lang).join(', ')}
+      - Recent code topics: ${comprehensiveContext.recentSnippets.map(s => s.topic).filter((v, i, a) => a.indexOf(v) === i).join(', ')}
+      - Conversation topics: ${comprehensiveContext.conversations.recentTopics?.join(', ')}`;
+      
+      let userPrompt = `Generate 5 captions for a ${mediaType || 'photo'} snap that blend personal moments with developer culture.`;
       
       if (recipientName) {
         const friendData = comprehensiveContext.friendships.find(f => f.friendName === recipientName);
@@ -365,17 +468,37 @@ async generateFullApp({ prompt, projectType, existingFiles }) {
         }
       }
       
-      userPrompt += `\nTime: ${comprehensiveContext.currentTime < 12 ? 'morning' : comprehensiveContext.currentTime < 17 ? 'afternoon' : 'evening'}`;
+      const hour = comprehensiveContext.currentTime;
+      const timeContext = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 22 ? 'evening' : 'late night';
+      userPrompt += `\nTime: ${timeContext} (${hour}:00)`;
       userPrompt += `\nDay: ${comprehensiveContext.dayOfWeek}`;
-      userPrompt += `\nVisual style: ${filter || 'none'} filter, ${background || 'none'} background`;
       
-      // Analyze past caption patterns
-      if (comprehensiveContext.snapHistory?.captionStyles) {
-        const avgLength = comprehensiveContext.snapHistory.captionStyles.reduce((acc, s) => acc + s.length, 0) / comprehensiveContext.snapHistory.captionStyles.length;
-        userPrompt += `\nUser typically writes ${avgLength < 30 ? 'short' : 'medium'} captions`;
+      if (comprehensiveContext.user.workSchedule === 'night-owl' && hour > 22) {
+        userPrompt += '\nNote: User is a night owl developer, reference late-night coding if appropriate';
+      } else if (comprehensiveContext.user.workSchedule === 'early-bird' && hour < 7) {
+        userPrompt += '\nNote: User is an early bird developer, reference morning productivity';
       }
       
-      userPrompt += '\n\nMake captions contextual, personalized, and match the user\'s style.';
+      userPrompt += `\nVisual style: ${filter || 'none'} filter, ${background || 'none'} background`;
+      
+      if (comprehensiveContext.codePatterns.timePatterns) {
+        const mostActiveTime = Object.entries(comprehensiveContext.codePatterns.timePatterns)
+          .sort((a, b) => b[1] - a[1])[0];
+        if (mostActiveTime) {
+          userPrompt += `\nUser most actively shares code in the ${mostActiveTime[0]}`;
+        }
+      }
+      
+      if (comprehensiveContext.recentSnippets.length > 0) {
+        const recentLang = comprehensiveContext.recentSnippets[0].language;
+        userPrompt += `\nRecently worked with ${recentLang}`;
+      }
+      
+      userPrompt += `\n\nCreate captions that:\n      1. Feel natural and match the user's communication style\n      2. Occasionally reference coding/tech when it fits naturally\n      3. Match the time of day and context\n      4. Are creative and engaging\n      5. Vary in length and tone`;
+
+      console.log('--- OpenAI Request ---');
+      console.log('System Prompt:', systemPrompt);
+      console.log('User Prompt:', userPrompt);
       
       const completion = await this.openai.chat.completions.create({
         model: "gpt-3.5-turbo",
@@ -386,6 +509,9 @@ async generateFullApp({ prompt, projectType, existingFiles }) {
         temperature: 0.8,
         max_tokens: 300
       });
+
+      console.log('--- OpenAI Response ---');
+      console.log('API Response:', JSON.stringify(completion, null, 2));
       
       const captions = completion.choices[0].message.content
         .split('\n')
@@ -393,63 +519,28 @@ async generateFullApp({ prompt, projectType, existingFiles }) {
         .map(line => line.replace(/^\d+\.\s*/, '').replace(/['"]/g, '').trim())
         .slice(0, 5);
       
+      console.log('Generated captions:', captions);
       return captions;
     } catch (error) {
       console.error('Error generating intelligent captions:', error);
-      return this.contextAwareFallbackCaptions(comprehensiveContext, imageContext);
+      console.error('Error details:', error.response?.data || error.message);
+      return [];
     }
-  }
-
-  contextAwareFallbackCaptions(context, imageContext) {
-    const captions = [];
-    const hour = new Date().getHours();
-    const { personality, humor, interests } = context.user;
-    
-    // Time-based captions
-    if (hour < 12) {
-      captions.push("Morning vibes ☀️");
-      captions.push("Rise and shine!");
-    } else if (hour < 17) {
-      captions.push("Afternoon mood 🌤");
-      captions.push("Midday moments");
-    } else {
-      captions.push("Evening feels 🌙");
-      captions.push("Night mode activated");
-    }
-    
-    // Personality-based captions
-    if (personality === 'extrovert') {
-      captions.push("Living my best life!");
-      captions.push("Who's joining? 🎉");
-    } else if (personality === 'introvert') {
-      captions.push("My happy place");
-      captions.push("Peaceful moments");
-    }
-    
-    // Interest-based captions
-    if (interests && interests.length > 0) {
-      captions.push(`${interests[0]} vibes ✨`);
-    }
-    
-    // Filter-based captions
-    if (imageContext.filter === 'grayscale') {
-      captions.push("Classic mode 🖤");
-    } else if (imageContext.filter === 'saturate') {
-      captions.push("Color explosion 🌈");
-    }
-    
-    return captions.slice(0, 5);
   }
 
   // 2. Best Time to Post Analysis
   async analyzeBestPostingTime() {
-    return this.fallbackPostingTimeAnalysis();
+    if (!this.openai) {
+      return [];
+    }
+    // Placeholder for OpenAI-based analysis
+    return [];
   }
 
   // 3. Smart Reply Generator
   async generateSmartReplies(snapContext = {}) {
     if (!this.openai) {
-      return this.fallbackReplyGenerator(snapContext);
+      return [];
     }
 
     try {
@@ -476,10 +567,10 @@ async generateFullApp({ prompt, projectType, existingFiles }) {
         .map(line => line.replace(/^\d+\.\s*/, '').replace(/['"]/g, '').trim())
         .slice(0, 8);
       
-      return replies.length > 0 ? replies : this.fallbackReplyGenerator(snapContext);
+      return replies.length > 0 ? replies : [];
     } catch (error) {
       console.error('Error generating replies:', error);
-      return this.fallbackReplyGenerator(snapContext);
+      return [];
     }
   }
 
@@ -490,7 +581,7 @@ async generateFullApp({ prompt, projectType, existingFiles }) {
       const context = await this.gatherComprehensiveContext();
       
       if (!this.openai) {
-        return this.contextAwareStoryIdeas(context);
+        return [];
       }
 
       const dayOfWeek = new Date().toLocaleDateString('en-US', { weekday: 'long' });
@@ -533,170 +624,22 @@ async generateFullApp({ prompt, projectType, existingFiles }) {
         .filter(idea => idea.length > 0)
         .slice(0, 15);
       
-      return ideas.length > 0 ? ideas : this.contextAwareStoryIdeas(context);
+      return ideas.length > 0 ? ideas : [];
     } catch (error) {
       console.error('Error generating story ideas:', error);
-      const context = await this.gatherComprehensiveContext();
-      return this.contextAwareStoryIdeas(context);
+      return [];
     }
   }
 
-  // Add this new fallback method for context-aware story ideas
-  contextAwareStoryIdeas(context) {
-    const ideas = [];
-    const hour = new Date().getHours();
-    const dayOfWeek = new Date().toLocaleDateString('en-US', { weekday: 'long' });
-    
-    // Time-based developer ideas
-    if (hour < 12) {
-      ideas.push("Morning standup highlights 📊");
-      ideas.push("Coffee count: loading... ☕");
-      ideas.push("Today's coding playlist 🎵");
-    } else if (hour < 17) {
-      ideas.push("Lunch break coding challenge");
-      ideas.push("Afternoon debugging session 🐛");
-      ideas.push("Code review discoveries");
-    } else {
-      ideas.push("After hours side project 🚀");
-      ideas.push("Evening commit count 📈");
-      ideas.push("Night owl coding session 🦉");
-    }
-    
-    // Based on programming languages
-    if (context.user.preferences?.primaryLanguages) {
-      const langs = context.user.preferences.primaryLanguages;
-      if (langs.includes('JavaScript')) {
-        ideas.push("JavaScript tip of the day 💡");
-        ideas.push("npm install adventures");
-      }
-      if (langs.includes('Python')) {
-        ideas.push("Python one-liner magic 🐍");
-        ideas.push("pip install shenanigans");
-      }
-      if (langs.includes('Go') || langs.includes('Rust')) {
-        ideas.push("Systems programming wins 🏆");
-      }
-    }
-    
-    // Based on frameworks
-    if (context.user.preferences?.frameworks) {
-      const frameworks = context.user.preferences.frameworks;
-      if (frameworks.includes('React')) {
-        ideas.push("React hooks explained simply");
-        ideas.push("Component lifecycle moments");
-      }
-      if (frameworks.includes('Django') || frameworks.includes('Flask')) {
-        ideas.push("Backend API progress update");
-      }
-    }
-    
-    // Based on work style
-    if (context.user.preferences?.workSchedule === 'night-owl') {
-      ideas.push("3am coding breakthrough 🌙");
-      ideas.push("Late night deploy stories");
-    } else if (context.user.preferences?.workSchedule === 'early-bird') {
-      ideas.push("5am productivity hack");
-      ideas.push("Early morning code wins");
-    }
-    
-    // Based on experience level
-    if (context.user.preferences?.experienceLevel === 'senior' || 
-        context.user.preferences?.experienceLevel === 'principal') {
-      ideas.push("Mentoring junior devs today");
-      ideas.push("Architecture decisions explained");
-      ideas.push("Tech lead daily struggles");
-    } else if (context.user.preferences?.experienceLevel === 'junior') {
-      ideas.push("Learning progress update 📚");
-      ideas.push("First PR celebration 🎉");
-      ideas.push("Asking for code help");
-    }
-    
-    // Based on project type
-    if (context.user.preferences?.projectTypes === 'frontend') {
-      ideas.push("CSS magic tricks ✨");
-      ideas.push("UI/UX improvements today");
-    } else if (context.user.preferences?.projectTypes === 'backend') {
-      ideas.push("Database optimization wins");
-      ideas.push("API performance boost 🚀");
-    } else if (context.user.preferences?.projectTypes === 'fullstack') {
-      ideas.push("Frontend vs Backend today");
-      ideas.push("Full stack juggling act");
-    }
-    
-    // Based on collaboration preferences
-    if (context.user.preferences?.pairProgramming) {
-      ideas.push("Pair programming session recap");
-    }
-    if (context.user.preferences?.openSource) {
-      ideas.push("Open source contribution 🌟");
-      ideas.push("GitHub stars update");
-    }
-    
-    // Based on learning goals
-    if (context.user.preferences?.learningGoals?.length > 0) {
-      const goal = context.user.preferences.learningGoals[0];
-      ideas.push(`Learning ${goal} progress`);
-    }
-    
-    // Fun developer life ideas
-    ideas.push("Bug that fixed itself 🤔");
-    ideas.push("Code works, nobody knows why");
-    ideas.push("Git commit message hall of fame");
-    ideas.push("Stack Overflow saved me again");
-    ideas.push("Localhost:3000 adventures");
-    ideas.push("Console.log debugging life");
-    ideas.push("Code compiles first try! 🎊");
-    ideas.push("Meeting that should've been PR");
-    ideas.push("Tabs vs Spaces debate");
-    ideas.push("My dev environment tour");
-    
-    // Weekend specific
-    if (dayOfWeek === 'Saturday' || dayOfWeek === 'Sunday') {
-      ideas.push("Weekend project progress");
-      ideas.push("Hackathon vibes 💻");
-      ideas.push("Learning new tech stack");
-    }
-    
-    // Based on recent conversations
-    if (context.conversations?.activeConversations?.length > 0) {
-      ideas.push("Collab project sneak peek");
-      ideas.push("Code review highlights");
-    }
-    
-    // Randomize and return top 15
-    return ideas
-      .sort(() => Math.random() - 0.5)
-      .slice(0, 15);
-  }
-
-  // Also update the fallbackStoryIdeas to be more developer-focused
-  fallbackStoryIdeas() {
-    const ideas = [
-      "Debug diary: Day 47 🐛",
-      "Deployed to production! 🚀",
-      "Code review adventures",
-      "My terminal setup tour",
-      "Favorite VS Code extensions",
-      "Git commit of the day",
-      "Stack Overflow hero moment",
-      "Rubber duck debugging session",
-      "Coffee to code ratio 📊",
-      "Weekend project reveal",
-      "Learning new framework",
-      "Coding playlist drop 🎵",
-      "Home office setup tour",
-      "Merge conflict survivor",
-      "Documentation actually helped!"
-    ];
-    return ideas.sort(() => Math.random() - 0.5).slice(0, 10);
-  }
-
-  // 5. Friendship Insights
+  // 5. Friendship Insights - Enhanced with RAG
   async analyzeFriendshipInsights() {
     try {
-      console.log('Starting developer friendship insights analysis...');
+      console.log('Starting RAG-enhanced developer friendship insights analysis...');
       
       const friendData = await this.gatherFriendshipData();
+      
+      // Get comprehensive context for RAG
+      const comprehensiveContext = await this.gatherComprehensiveContext();
       
       // Get user preferences
       let userPreferences = {};
@@ -707,11 +650,34 @@ async generateFullApp({ prompt, projectType, existingFiles }) {
         }
       }
       
-      console.log('Developer preferences:', userPreferences);
+      // Get code sharing patterns for RAG
+      const codePatterns = await this.analyzeCodeSharingPatterns();
       
-      // Generate developer-specific insights
+      // Get recent interactions for RAG
+      const recentInteractions = await this.analyzeRecentInteractions();
+      
+      console.log('Developer preferences:', userPreferences);
+      console.log('Code patterns for RAG:', codePatterns);
+      console.log('Recent interactions:', recentInteractions);
+      
+      // Generate developer-specific insights with RAG
       const insights = [];
       const recommendations = [];
+      
+      // RAG-based tech stack insights
+      if (codePatterns.languageFrequency && Object.keys(codePatterns.languageFrequency).length > 0) {
+        const topLanguage = Object.entries(codePatterns.languageFrequency)
+          .sort((a, b) => b[1] - a[1])[0][0];
+        insights.push(`You've shared ${topLanguage} code ${codePatterns.languageFrequency[topLanguage]} times recently`);
+        
+        // Find friends with similar language preferences
+        const friendsWithSameLanguage = comprehensiveContext.friendActivity?.friendLanguages
+          ?.filter(f => f.languages.includes(topLanguage))
+          ?.length || 0;
+        if (friendsWithSameLanguage > 0) {
+          insights.push(`${friendsWithSameLanguage} friends also code in ${topLanguage} - perfect for collaboration`);
+        }
+      }
       
       // Tech stack matching insights
       if (userPreferences.primaryLanguages && userPreferences.primaryLanguages.length > 0) {
@@ -719,6 +685,24 @@ async generateFullApp({ prompt, projectType, existingFiles }) {
         
         if (userPreferences.primaryLanguages.includes('JavaScript')) {
           recommendations.push("Connect with other JS developers for code reviews");
+        }
+      }
+      
+      // RAG-based activity insights
+      if (recentInteractions.activeChats > 0) {
+        insights.push(`You've had ${recentInteractions.activeChats} active coding discussions this week`);
+        
+        if (recentInteractions.codeSnippetsShared > 0) {
+          insights.push(`Shared ${recentInteractions.codeSnippetsShared} code snippets with friends`);
+        }
+      }
+      
+      // RAG-based collaboration insights
+      if (codePatterns.collaborationScore) {
+        if (codePatterns.collaborationScore > 7) {
+          insights.push("You're a highly collaborative developer - keep sharing knowledge!");
+        } else if (codePatterns.collaborationScore < 4) {
+          recommendations.push("Share more code snippets to boost collaboration");
         }
       }
       
@@ -753,9 +737,9 @@ async generateFullApp({ prompt, projectType, existingFiles }) {
           } else {
             recommendations.push("Consider mentoring - your experience is valuable");
           }
-        } else if (userPreferences.experienceLevel === 'junior') {
-          recommendations.push("Connect with senior devs in your network for guidance");
         }
+      } else if (userPreferences.experienceLevel === 'junior') {
+        recommendations.push("Connect with senior devs in your network for guidance");
       }
       
       // Project type insights
@@ -839,15 +823,8 @@ async generateFullApp({ prompt, projectType, existingFiles }) {
     } catch (error) {
       console.error('Error analyzing friendships:', error);
       return {
-        insights: [
-          "Configure your developer preferences for insights",
-          "Connect with fellow coders",
-          "Share your tech stack"
-        ],
-        recommendations: [
-          "Update your developer preferences",
-          "Join the developer community"
-        ]
+        insights: [],
+        recommendations: []
       };
     }
   }
@@ -1249,45 +1226,159 @@ async generateFullApp({ prompt, projectType, existingFiles }) {
     console.log('Feedback stored:', type, feedback);
   }
 
-  // Fallback methods
-  fallbackCaptionGenerator(context) {
-    const captions = [
-      "Great moment! 📸", 
-      "Living life ✨", 
-      "Mood 💯", 
-      "Vibes only",
-      "Love this!",
-      "Perfect day 🌟",
-      "Feeling good 😊",
-      "Just me 🤷"
-    ];
-    return captions.sort(() => Math.random() - 0.5).slice(0, 5);
+  
+
+  // Helper function for RAG-based code sharing patterns
+  async analyzeCodeSharingPatterns() {
+    try {
+      const userId = auth.currentUser?.uid;
+      if (!userId) return { languageFrequency: {}, collaborationScore: 0 };
+      
+      // Get recent code shares
+      const codeSharesQuery = query(
+        collection(db, 'codeSharing'),
+        where('userId', '==', userId),
+        orderBy('timestamp', 'desc'),
+        limit(30)
+      );
+      
+      const languageFrequency = {};
+      let totalShares = 0;
+      
+      try {
+        const snapshot = await getDocs(codeSharesQuery);
+        snapshot.forEach(doc => {
+          const data = doc.data();
+          totalShares++;
+          if (data.language) {
+            languageFrequency[data.language] = (languageFrequency[data.language] || 0) + 1;
+          }
+        });
+      } catch (error) {
+        console.log('Could not query code shares:', error);
+      }
+      
+      // Calculate collaboration score (0-10)
+      const collaborationScore = Math.min(10, Math.round((totalShares / 3)));
+      
+      // Get time patterns
+      const timePatterns = {};
+      
+      return {
+        languageFrequency,
+        collaborationScore,
+        totalShares,
+        timePatterns,
+        languages: Object.keys(languageFrequency)
+      };
+    } catch (error) {
+      console.error('Error analyzing code sharing patterns:', error);
+      return { languageFrequency: {}, collaborationScore: 0 };
+    }
   }
 
-  fallbackReplyGenerator(context) {
-    return ["😍", "Love it!", "Amazing!", "So good!", "Yes!!", "🔥🔥", "Wow!", "Nice! 👌"];
+  // Helper function to get recent code snippets
+  async getRecentCodeSnippets() {
+    try {
+      const userId = auth.currentUser?.uid;
+      if (!userId) return [];
+      
+      // Get from local storage (CodeSnippetService)
+      const snippetsData = await AsyncStorage.getItem('codeSnippets');
+      const snippets = snippetsData ? JSON.parse(snippetsData) : {};
+      
+      // Convert to array and sort by date
+      const snippetArray = Object.values(snippets)
+        .sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified))
+        .slice(0, 10);
+      
+      // Extract topics from snippets
+      return snippetArray.map(snippet => ({
+        id: snippet.id,
+        language: snippet.language,
+        topic: snippet.title,
+        lastModified: snippet.lastModified
+      }));
+    } catch (error) {
+      console.error('Error getting recent snippets:', error);
+      return [];
+    }
   }
 
-  fallbackPostingTimeAnalysis() {
-    return [
-      { time: "8:00 AM", reason: "Morning engagement peak" },
-      { time: "12:30 PM", reason: "Lunch break activity" },
-      { time: "7:00 PM", reason: "Evening prime time" }
-    ];
-  }
-
-  fallbackFriendshipInsights() {
-    return {
-      insights: [
-        "You have an active friend group!",
-        "Your friends enjoy your content",
-        "Great engagement with your snaps"
-      ],
-      recommendations: [
-        "Send a snap to reconnect with someone",
-        "Try posting at different times"
-      ]
-    };
+  // Helper function for RAG-based recent interactions analysis
+  async analyzeRecentInteractions() {
+    try {
+      const userId = auth.currentUser?.uid;
+      if (!userId) return { activeChats: 0, codeSnippetsShared: 0 };
+      
+      const oneWeekAgo = new Date();
+      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+      
+      // Get recent chats
+      const chatsQuery = query(
+        collection(db, 'chats'),
+        where('participants', 'array-contains', userId)
+      );
+      
+      const chatsSnapshot = await getDocs(chatsQuery);
+      let activeChats = 0;
+      let codeSnippetsShared = 0;
+      let messageCount = 0;
+      
+      // Analyze each chat
+      for (const chatDoc of chatsSnapshot.docs) {
+        const chatData = chatDoc.data();
+        const lastMessageTime = new Date(chatData.lastMessageTime || 0);
+        
+        if (lastMessageTime > oneWeekAgo) {
+          activeChats++;
+          
+          // Count code snippets in recent messages
+          const messagesQuery = query(
+            collection(db, 'chats', chatDoc.id, 'messages'),
+            where('senderId', '==', userId),
+            where('type', '==', 'code_snippet')
+          );
+          
+          try {
+            const messagesSnapshot = await getDocs(messagesQuery);
+            codeSnippetsShared += messagesSnapshot.size;
+          } catch (error) {
+            console.log('Could not query messages:', error);
+          }
+        }
+      }
+      
+      // Get story interactions
+      const storiesQuery = query(
+        collection(db, 'stories'),
+        where('userId', '==', userId),
+        orderBy('timestamp', 'desc'),
+        limit(20)
+      );
+      
+      let storyEngagement = 0;
+      try {
+        const storiesSnapshot = await getDocs(storiesQuery);
+        storiesSnapshot.forEach(doc => {
+          const story = doc.data();
+          storyEngagement += (story.views || 0) + (story.likes || 0);
+        });
+      } catch (error) {
+        console.log('Could not query stories:', error);
+      }
+      
+      return {
+        activeChats,
+        codeSnippetsShared,
+        messageCount,
+        storyEngagement,
+        weeklyActivity: activeChats > 5 ? 'high' : activeChats > 2 ? 'moderate' : 'low'
+      };
+    } catch (error) {
+      console.error('Error analyzing recent interactions:', error);
+      return { activeChats: 0, codeSnippetsShared: 0 };
+    }
   }
 }
 

@@ -39,12 +39,15 @@ export default function DiscoverScreen({ navigation }) {
     { id: 'javascript', name: 'JavaScript' },
     { id: 'python', name: 'Python' },
     { id: 'java', name: 'Java' },
+    { id: 'cpp', name: 'C++' },
+    { id: 'html', name: 'HTML' },
+    { id: 'css', name: 'CSS' },
     { id: 'typescript', name: 'TypeScript' },
     { id: 'react', name: 'React' },
+    { id: 'sql', name: 'SQL' },
     { id: 'go', name: 'Go' },
     { id: 'rust', name: 'Rust' },
-    { id: 'cpp', name: 'C++' },
-    { id: 'csharp', name: 'C#' },
+    { id: 'swift', name: 'Swift' },
   ];
 
   useEffect(() => {
@@ -115,72 +118,88 @@ export default function DiscoverScreen({ navigation }) {
   };
 
 
-  const openApp = async (app) => {
-  try {
-    // Record view
-    await updateDoc(doc(db, 'deployedApps', app.id), {
-      views: (app.views || 0) + 1
-    });
-    
-    // Navigate to code editor with the app data
-    navigation.navigate('CodeEditor', {
-      importApp: {
-        id: app.id,
-        name: app.name,
-        projectId: app.projectId,
-        deployUrl: app.deployUrl
-      }
-    });
-  } catch (error) {
-    console.error('Error opening app:', error);
-    Alert.alert('Error', 'Failed to open app');
-  }
-};
+  const openSnippet = async (snippet) => {
+    try {
+      // Record view
+      await updateDoc(doc(db, 'sharedSnippets', snippet.id), {
+        views: (snippet.views || 0) + 1
+      });
+      
+      // Navigate to code snippet screen with the snippet data
+      navigation.navigate('CodeSnippet', {
+        importedSnippet: {
+          id: snippet.id,
+          title: snippet.title,
+          language: snippet.language,
+          content: snippet.content
+        }
+      });
+    } catch (error) {
+      console.error('Error opening snippet:', error);
+      Alert.alert('Error', 'Failed to open snippet');
+    }
+  };
 
   const loadCodeStories = async () => {
-  try {
-    console.log('Loading published apps...');
-    
-    // Query for published apps instead of code snippets
-    const appsQuery = query(
-      collection(db, 'deployedApps'),
-      where('public', '==', true),
-      orderBy('createdAt', 'desc'),
-      limit(50)
-    );
+    try {
+      console.log('Loading shared code snippets, language filter:', selectedLanguage);
+      
+      // Build query based on language filter
+      let snippetsQuery;
+      if (selectedLanguage === 'all') {
+        // Load all snippets
+        snippetsQuery = query(
+          collection(db, 'sharedSnippets'),
+          where('public', '==', true),
+          orderBy('sharedAt', 'desc'),
+          limit(50)
+        );
+      } else {
+        // Filter by specific language
+        // Note: This requires a composite index in Firestore for:
+        // Collection: sharedSnippets
+        // Fields: public (asc), language (asc), sharedAt (desc)
+        snippetsQuery = query(
+          collection(db, 'sharedSnippets'),
+          where('public', '==', true),
+          where('language', '==', selectedLanguage),
+          orderBy('sharedAt', 'desc'),
+          limit(50)
+        );
+      }
 
-    const snapshot = await getDocs(appsQuery);
-    const apps = [];
-    
-    for (const doc of snapshot.docs) {
-      const data = doc.data();
+      const snapshot = await getDocs(snippetsQuery);
+      const snippets = [];
       
-      // Check if user liked
-      const likeQuery = query(
-        collection(db, 'appEngagement'),
-        where('appId', '==', doc.id),
-        where('userId', '==', auth.currentUser.uid),
-        where('type', '==', 'like')
-      );
-      const likeDocs = await getDocs(likeQuery);
+      for (const doc of snapshot.docs) {
+        const data = doc.data();
+        
+        // Check if user liked
+        const likeQuery = query(
+          collection(db, 'snippetEngagement'),
+          where('snippetId', '==', doc.id),
+          where('userId', '==', auth.currentUser.uid),
+          where('type', '==', 'like')
+        );
+        const likeDocs = await getDocs(likeQuery);
+        
+        snippets.push({
+          id: doc.id,
+          ...data,
+          userLiked: !likeDocs.empty,
+          views: data.views || 0,
+          likes: data.likes || 0,
+          shares: data.shares || 0
+        });
+      }
       
-      apps.push({
-        id: doc.id,
-        ...data,
-        userLiked: !likeDocs.empty,
-        views: data.views || 0,
-        likes: data.likes || 0,
-        forks: data.forks || 0
-      });
+      console.log(`Found ${snippets.length} ${selectedLanguage === 'all' ? '' : selectedLanguage} snippets`);
+      return snippets;
+    } catch (error) {
+      console.error('Error loading snippets:', error);
+      return [];
     }
-    
-    console.log(`Found ${apps.length} published apps`);
-    return apps;
-  } catch (error) {
-    console.error('Error loading apps:', error);
-    return [];
-  }
-};
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -377,22 +396,29 @@ export default function DiscoverScreen({ navigation }) {
     </TouchableOpacity>
   );
 
-  const renderAppItem = ({ item }) => {
-    const isOwnProject = item.owner === auth.currentUser?.uid;
+  const renderSnippetItem = ({ item }) => {
+    const isOwnSnippet = item.owner === auth.currentUser?.uid;
     
     return (
       <TouchableOpacity 
-        style={[styles.appItem, isOwnProject && styles.ownAppItem]} 
-        onPress={() => !isOwnProject && openApp(item)}
-        disabled={isOwnProject}
+        style={[styles.snippetItem, isOwnSnippet && styles.ownSnippetItem]} 
+        onPress={() => !isOwnSnippet && openSnippet(item)}
+        disabled={isOwnSnippet}
       >
-        <View style={styles.appHeader}>
-          <View style={styles.appInfo}>
-            <Text style={styles.appName} numberOfLines={1}>
-              {item.name}
-            </Text>
-            <Text style={styles.appAuthor}>
-              by {item.ownerName} {isOwnProject && '(You)'}
+        <View style={styles.snippetHeader}>
+          <View style={styles.snippetInfo}>
+            <View style={styles.snippetTitleRow}>
+              <Ionicons 
+                name={item.fileType?.icon || 'code-slash'} 
+                size={20} 
+                color={Colors.primary} 
+              />
+              <Text style={styles.snippetTitle} numberOfLines={1}>
+                {item.title}
+              </Text>
+            </View>
+            <Text style={styles.snippetAuthor}>
+              {item.fileType?.name || item.language} • by {item.ownerName} {isOwnSnippet && '(You)'}
             </Text>
           </View>
           {item.userLiked && (
@@ -400,11 +426,13 @@ export default function DiscoverScreen({ navigation }) {
           )}
         </View>
         
-        <Text style={styles.appDescription} numberOfLines={2}>
-          {item.description}
-        </Text>
+        <View style={styles.codePreview}>
+          <Text style={styles.codeText} numberOfLines={3}>
+            {item.content}
+          </Text>
+        </View>
         
-        <View style={styles.appStats}>
+        <View style={styles.snippetStats}>
           <View style={styles.statItem}>
             <Ionicons name="eye" size={14} color={Colors.gray} />
             <Text style={styles.statText}>{item.views || 0}</Text>
@@ -414,12 +442,8 @@ export default function DiscoverScreen({ navigation }) {
             <Text style={styles.statText}>{item.likes || 0}</Text>
           </View>
           <View style={styles.statItem}>
-            <Ionicons name="git-branch" size={14} color={Colors.gray} />
-            <Text style={styles.statText}>{item.forks || 0} forks</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Ionicons name="document-text" size={14} color={Colors.gray} />
-            <Text style={styles.statText}>{item.fileCount} files</Text>
+            <Ionicons name="share-social" size={14} color={Colors.gray} />
+            <Text style={styles.statText}>{item.shares || 0}</Text>
           </View>
         </View>
       </TouchableOpacity>
@@ -468,15 +492,6 @@ export default function DiscoverScreen({ navigation }) {
             <Ionicons name="chevron-down" size={16} color={Colors.primary} />
           </TouchableOpacity>
         )}
-
-        // Add to the tabs
-<TouchableOpacity
-  style={[styles.tab, activeTab === 'apps' && styles.activeTab]}
-  onPress={() => setActiveTab('apps')}
->
-  <Ionicons name="apps" size={20} color={activeTab === 'apps' ? Colors.primary : Colors.gray} />
-  <Text style={[styles.tabText, activeTab === 'apps' && styles.activeTabText]}>Apps</Text>
-</TouchableOpacity>
       </View>
 
       {loading ? (
@@ -489,9 +504,9 @@ export default function DiscoverScreen({ navigation }) {
       ) : (
         activeTab === 'code' ? (
           <FlatList
-  key="app-list"
+  key="snippet-list"
   data={codeContent}
-  renderItem={renderAppItem}  // Changed from renderCodeItem
+  renderItem={renderSnippetItem}
   keyExtractor={(item) => item.id}
   numColumns={1}
   contentContainerStyle={styles.codeListContainer}
@@ -504,9 +519,9 @@ export default function DiscoverScreen({ navigation }) {
   }
   ListEmptyComponent={() => (
     <View style={styles.emptyContainer}>
-      <Ionicons name="apps-outline" size={60} color={Colors.gray} />
-      <Text style={styles.emptyText}>No apps published yet</Text>
-      <Text style={styles.emptySubtext}>Be the first to share an app!</Text>
+      <Ionicons name="code-slash-outline" size={60} color={Colors.gray} />
+      <Text style={styles.emptyText}>No code snippets shared yet</Text>
+      <Text style={styles.emptySubtext}>Be the first to share a snippet!</Text>
     </View>
   )}
 />
@@ -654,7 +669,6 @@ export default function DiscoverScreen({ navigation }) {
                   onPress={() => {
                     setSelectedLanguage(lang.id);
                     setShowLanguageFilter(false);
-                    loadContent(); // Reload with new filter
                   }}
                 >
                   <Text style={[
@@ -1032,5 +1046,64 @@ appStats: {
   selectedLanguageText: {
     color: Colors.primary,
     fontWeight: '600',
+  },
+  // Snippet styles
+  snippetItem: {
+    backgroundColor: Colors.white,
+    padding: 15,
+    marginVertical: 5,
+    marginHorizontal: 10,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  ownSnippetItem: {
+    opacity: 0.7,
+    backgroundColor: '#f5f5f5',
+  },
+  snippetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  snippetInfo: {
+    flex: 1,
+  },
+  snippetTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  snippetTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: Colors.black,
+    marginLeft: 8,
+    flex: 1,
+  },
+  snippetAuthor: {
+    fontSize: 14,
+    color: Colors.gray,
+  },
+  codePreview: {
+    backgroundColor: '#f8f9fa',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  codeText: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 12,
+    color: '#333',
+    lineHeight: 18,
+  },
+  snippetStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 15,
   },
 });

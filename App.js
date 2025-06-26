@@ -8,7 +8,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Colors } from './constants/Colors';
 import { auth } from './firebase';
-import CodeEditorScreen from './screens/CodeEditorScreen';
+import CodeSnippetScreen from './screens/CodeSnippetScreen';
 import CreateGroupScreen from './screens/CreateGroupScreen';
 import PreferencesScreen from './screens/PreferencesScreen';
 
@@ -118,7 +118,7 @@ function MainTabs() {
 
         <Tab.Screen 
   name="Code" 
-  component={CodeEditorScreen}
+  component={CodeSnippetScreen}
   options={{
     tabBarIcon: ({ color, size }) => (
       <Ionicons name="code-slash-outline" size={size} color={color} />
@@ -330,8 +330,8 @@ function App() {
 />
 
 <Stack.Screen 
-  name="CodeEditor" 
-  component={CodeEditorScreen}
+  name="CodeSnippet" 
+  component={CodeSnippetScreen}
   options={{ 
     headerShown: false,
   }}

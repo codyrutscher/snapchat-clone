@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { signOut, updateProfile } from 'firebase/auth';
 import { collection, doc, updateDoc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { 
   Alert, 
   Modal, 
@@ -19,7 +20,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { FriendshipInsights } from '../components/AIAssistant';
 import PayPalSubscription from '../components/PayPalSubscription';
 import SubscriptionService from '../services/SubscriptionService';
-import OpenAIService from '../services/OpenAIService';
+import OpenAIService from '../services/OpenAIServiceSimple';
 import { Colors } from '../constants/Colors';
 import { auth, db } from '../firebase';
 import { uploadToCloudinary } from '../services/cloudinaryConfig';
@@ -96,6 +97,15 @@ export default function ProfileScreen({ navigation }) {
     });
   };
 }, []);
+
+ useFocusEffect(
+  React.useCallback(() => {
+    // Refresh subscription status when screen comes into focus
+    if (SubscriptionService.checkSubscriptionStatus) {
+      SubscriptionService.checkSubscriptionStatus();
+    }
+  }, [])
+);
 
   const loadUserData = async () => {
     try {
@@ -248,9 +258,7 @@ export default function ProfileScreen({ navigation }) {
          {!subscriptionStatus?.isSubscribed && (
           <View style={styles.limitInfo}>
             <Text style={styles.limitText}>
-              Free tier: {subscriptionStatus?.remaining?.snaps || 20} snaps, 
-              {subscriptionStatus?.remaining?.stories || 20} stories,
-              20 code snippets left this month
+              Free Tier: 20 snaps, stories, and snippets / Pro Tier: unlimited snaps, stories, and snippets
             </Text>
           </View>
         )}

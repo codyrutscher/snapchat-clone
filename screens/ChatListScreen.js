@@ -5,11 +5,12 @@ import { FlatList, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator }
 import { Colors } from '../constants/Colors';
 import { auth, db } from '../firebase';
 
-export default function ChatListScreen({ navigation }) {
+export default function ChatListScreen({ navigation, route }) {
   const [chats, setChats] = useState([]);
   const [friends, setFriends] = useState([]);
   const [blockedUsers, setBlockedUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const sharedSnippet = route?.params?.sharedSnippet;
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -101,7 +102,8 @@ export default function ChatListScreen({ navigation }) {
       onPress={() => navigation.navigate('ChatDetail', { 
         chatId: item.id, 
         chatName: getChatName(item),
-        chatType: item.type || 'direct'
+        chatType: item.type || 'direct',
+        sharedSnippet: sharedSnippet
       })}
     >
       <View style={styles.avatarContainer}>
@@ -162,6 +164,14 @@ export default function ChatListScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      {sharedSnippet && (
+        <View style={styles.shareHeader}>
+          <Ionicons name="code-slash" size={20} color={Colors.primary} />
+          <Text style={styles.shareHeaderText}>
+            Select a chat to share "{sharedSnippet.title}"
+          </Text>
+        </View>
+      )}
       {friends.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="people-outline" size={80} color={Colors.primary} />
@@ -320,5 +330,20 @@ const styles = StyleSheet.create({
   createGroupButton: {
     bottom: 90,
     backgroundColor: Colors.success,
+  },
+  shareHeader: {
+    backgroundColor: Colors.primary + '10',
+    padding: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.lightGray,
+  },
+  shareHeaderText: {
+    flex: 1,
+    fontSize: 16,
+    color: Colors.primary,
+    fontWeight: '500',
   },
 });

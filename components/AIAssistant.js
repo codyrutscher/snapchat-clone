@@ -10,7 +10,7 @@ import {
   Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import OpenAIService from '../services/OpenAIService';
+import OpenAIService from '../services/OpenAIServiceSimple';
 import { Colors } from '../constants/Colors';
 
 export function CaptionSuggestions({ imageContext, onSelect }) {
@@ -24,10 +24,20 @@ export function CaptionSuggestions({ imageContext, onSelect }) {
   const loadCaptions = async () => {
     setLoading(true);
     try {
-      const suggestions = await OpenAIService.generateIntelligentCaptions(imageContext);
-      setCaptions(suggestions);
+      console.log('Loading AI captions...');
+      const suggestions = await OpenAIService.generateCaptions(imageContext);
+      console.log('Received captions:', suggestions);
+      setCaptions(suggestions || []);
     } catch (error) {
       console.error('Error loading captions:', error);
+      // Use fallback captions
+      setCaptions([
+        "Great moment! 📸",
+        "Living life ✨",
+        "Mood 💯",
+        "Vibes only",
+        "Love this!"
+      ]);
     } finally {
       setLoading(false);
     }

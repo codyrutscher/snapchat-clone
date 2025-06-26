@@ -6,6 +6,7 @@ class SubscriptionService {
     this.subscriptionStatus = null;
     this.snapCount = 0;
     this.storyCount = 0;
+    this.snippetCount = 0;
     this.monthlyLimit = 20;
     this.listeners = [];
   }
@@ -24,6 +25,7 @@ class SubscriptionService {
           this.subscriptionStatus = data.subscription || null;
           this.snapCount = data.monthlySnapCount || 0;
           this.storyCount = data.monthlyStoryCount || 0;
+          this.snippetCount = data.monthlySnippetCount || 0;
           
           // Reset counts if new month
           const lastReset = data.lastCountReset ? new Date(data.lastCountReset) : null;
@@ -40,13 +42,16 @@ class SubscriptionService {
         }
       });
 
+
+        this.notifyListeners();
+        
       return unsubscribe;
     } catch (error) {
       console.error('Error initializing subscription:', error);
     }
   }
 
-  // Check if user can send snap/story
+  // Check if user can send snap/story/snippet
   async canSendContent(type = 'snap') {
     if (!auth.currentUser) return false;
 
@@ -54,9 +59,46 @@ class SubscriptionService {
     if (this.isSubscribed()) return true;
 
     // Check monthly limits
-    const count = type === 'snap' ? this.snapCount : this.storyCount;
+    let count;
+    switch(type) {
+      case 'snap':
+        count = this.snapCount;
+        break;
+      case 'story':
+        count = this.storyCount;
+        break;
+      case 'snippet':
+        count = this.snippetCount;
+        break;
+      default:
+        count = 0;
+    }
     return count < this.monthlyLimit;
   }
+
+
+  // Add this method to your SubscriptionService class:
+async checkSubscriptionStatus() {
+  if (!auth.currentUser) return;
+  
+  try {
+    const userRef = doc(db, 'users', auth.currentUser.uid);
+    const userDoc = await getDoc(userRef);
+    
+    if (userDoc.exists()) {
+      const data = userDoc.data();
+      this.subscriptionStatus = data.subscription || null;
+      this.snapCount = data.monthlySnapCount || 0;
+      this.storyCount = data.monthlyStoryCount || 0;
+      this.snippetCount = data.monthlySnippetCount || 0;
+      
+      // Notify listeners with updated data
+      this.notifyListeners();
+    }
+  } catch (error) {
+    console.error('Error checking subscription status:', error);
+  }
+}
 
   // Increment content count
   async incrementContentCount(type = 'snap') {
@@ -64,8 +106,24 @@ class SubscriptionService {
 
     try {
       const userRef = doc(db, 'users', auth.currentUser.uid);
-      const field = type === 'snap' ? 'monthlySnapCount' : 'monthlyStoryCount';
-      const currentCount = type === 'snap' ? this.snapCount : this.storyCount;
+      let field, currentCount;
+      
+      switch(type) {
+        case 'snap':
+          field = 'monthlySnapCount';
+          currentCount = this.snapCount;
+          break;
+        case 'story':
+          field = 'monthlyStoryCount';
+          currentCount = this.storyCount;
+          break;
+        case 'snippet':
+          field = 'monthlySnippetCount';
+          currentCount = this.snippetCount;
+          break;
+        default:
+          return;
+      }
       
       await updateDoc(userRef, {
         [field]: currentCount + 1,
@@ -85,11 +143,13 @@ class SubscriptionService {
       await updateDoc(userRef, {
         monthlySnapCount: 0,
         monthlyStoryCount: 0,
+        monthlySnippetCount: 0,
         lastCountReset: new Date().toISOString()
       });
       
       this.snapCount = 0;
       this.storyCount = 0;
+      this.snippetCount = 0;
     } catch (error) {
       console.error('Error resetting counts:', error);
     }
@@ -142,7 +202,7 @@ class SubscriptionService {
     return {
       snaps: Math.max(0, this.monthlyLimit - this.snapCount),
       stories: Math.max(0, this.monthlyLimit - this.storyCount),
-      codeSnippets: 20 // Add this for code snippets
+      codeSnippets: Math.max(0, this.monthlyLimit - this.snippetCount)
     };
   }
 
@@ -162,7 +222,8 @@ class SubscriptionService {
       isSubscribed: this.isSubscribed(),
       remaining: this.getRemainingContent(),
       snapCount: this.snapCount,
-      storyCount: this.storyCount
+      storyCount: this.storyCount,
+      snippetCount: this.snippetCount
     }));
   }
 }

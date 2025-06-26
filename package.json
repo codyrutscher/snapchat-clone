@@ -17,9 +17,10 @@
     "@react-navigation/native": "^6.1.9",
     "@react-navigation/stack": "^6.3.20",
     "deprecated-react-native-prop-types": "^4.1.0",
-    "expo": "^53.0.0",
+    "expo": "^53.0.13",
     "expo-av": "~15.1.6",
-    "expo-camera": "~16.1.8",
+    "expo-camera": "~16.1.9",
+    "expo-clipboard": "~7.1.4",
     "expo-constants": "~17.1.6",
     "expo-image-manipulator": "~13.1.7",
     "expo-image-picker": "~16.1.4",
@@ -36,8 +37,8 @@
     "react-native-safe-area-context": "5.4.0",
     "react-native-screens": "~4.11.1",
     "react-native-web": "^0.20.0",
-    "react-native-webview": "^13.15.0",
-    "expo-clipboard": "~7.1.4"
+    "react-native-webview": "^13.13.5",
+    "expo-video": "~2.2.2"
   },
   "devDependencies": {
     "@babel/core": "^7.26.0"

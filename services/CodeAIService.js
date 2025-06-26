@@ -1,5 +1,7 @@
 import OpenAI from 'openai';
 import { OPENAI_API_KEY } from './config';
+import { collection, query, where, orderBy, limit, getDocs, doc, getDoc } from 'firebase/firestore';
+import { db, auth } from '../firebase';
 
 class CodeAIService {
   constructor() {

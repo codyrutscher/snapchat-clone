@@ -2,6 +2,7 @@ import { collection, query, where, orderBy, limit, getDocs, doc, getDoc, addDoc,
 import { db, auth } from '../firebase';
 import OpenAIService from './OpenAIService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import SubscriptionService from './SubscriptionService';
 
 class CodeSnippetService {
   constructor() {
@@ -39,6 +40,12 @@ class CodeSnippetService {
 
   // Create a new snippet
   async createSnippet(title, language, content) {
+    // Check if user can create more snippets
+    const canCreate = await SubscriptionService.canSendContent('snippet');
+    if (!canCreate) {
+      throw new Error('Monthly snippet limit reached. Upgrade to Pro for unlimited snippets!');
+    }
+
     const snippetId = `snippet_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const fileType = this.fileTypes.find(ft => ft.id === language) || this.fileTypes[0];
     
@@ -59,6 +66,9 @@ class CodeSnippetService {
 
     this.snippets[snippetId] = snippet;
     await this.saveSnippets();
+    
+    // Increment snippet count
+    await SubscriptionService.incrementContentCount('snippet');
     
     return snippet;
   }
@@ -111,7 +121,9 @@ class CodeSnippetService {
         ...snippet,
         sharedAt: new Date().toISOString(),
         shareType: shareType,
-        public: true
+        public: true,
+        owner: auth.currentUser?.uid,
+        ownerName: auth.currentUser?.displayName || 'Anonymous Developer'
       };
 
       if (shareType === 'discover') {

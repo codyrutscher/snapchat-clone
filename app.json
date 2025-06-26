@@ -1,44 +1,52 @@
 {
-    "expo": {
-      "name": "FlashChat",
-      "slug": "flashchat",
-      "owner": "codyrutscher",
-      "version": "1.0.0",
-      "orientation": "portrait",
-      "icon": "./assets/icon.png",
-      "userInterfaceStyle": "light",
-      "splash": {
+  "expo": {
+    "name": "FlashChat",
+    "slug": "flashchat",
+    "owner": "codyrutscher",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#6B5CFF"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.yourcompany.flashchat",
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app uses the camera to take snaps.",
+        "NSPhotoLibraryUsageDescription": "This app needs access to photo library to save snaps.",
+        "NSLocationWhenInUseUsageDescription": "This app uses your location to show you on the Snap Map to your friends."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#6B5CFF"
       },
-      "assetBundlePatterns": [
-        "**/*"
-      ],
-      "ios": {
-        "supportsTablet": true,
-        "bundleIdentifier": "com.yourcompany.flashchat",
-        "infoPlist": {
-          "NSCameraUsageDescription": "This app uses the camera to take snaps.",
-          "NSPhotoLibraryUsageDescription": "This app needs access to photo library to save snaps.",
-          "NSLocationWhenInUseUsageDescription": "This app uses your location to show you on the Snap Map to your friends."
-        }
-      },
-      "android": {
-        "adaptiveIcon": {
-          "foregroundImage": "./assets/icon.png",
-          "backgroundColor": "#6B5CFF"
-        },
-        "package": "com.yourcompany.flashchat",
-        "permissions": ["CAMERA", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "WRITE_EXTERNAL_STORAGE"]
-      },
-      "web": {
-        "favicon": "./assets/icon.png",
-        "name": "FlashChat",
-        "shortName": "FlashChat",
-        "description": "A Snapchat-like messaging app",
-        "backgroundColor": "#6B5CFF",
-        "themeColor": "#6B5CFF",
-        "display": "standalone",
-        "orientation": "portrait"
-      }
-    }
+      "package": "com.yourcompany.flashchat",
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/icon.png",
+      "name": "FlashChat",
+      "shortName": "FlashChat",
+      "description": "A Snapchat-like messaging app",
+      "backgroundColor": "#6B5CFF",
+      "themeColor": "#6B5CFF",
+      "display": "standalone",
+      "orientation": "portrait"
+    },
+    "plugins": [
+      "expo-video"
+    ]
   }
+}

@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, updateDoc, arrayUnion } from 'firebase/firestore';
 import React, { useEffect, useLayoutEffect, useState } from 'react';
+import SubscriptionService from '../services/SubscriptionService';
 import {
     Alert,
     FlatList,
@@ -19,7 +20,7 @@ import { auth, db } from '../firebase';
 import ContentModerationService from '../services/ContentModerationService';
 
 export default function ChatScreen({ route, navigation }) {
-  const { chatId, chatName, chatType } = route.params;
+  const { chatId, chatName, chatType, sharedSnippet } = route.params;
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [chatInfo, setChatInfo] = useState(null);
@@ -54,6 +55,43 @@ export default function ChatScreen({ route, navigation }) {
     
     loadChatInfo();
   }, [chatId]);
+
+  useEffect(() => {
+    // Handle shared snippet from navigation
+    if (sharedSnippet && chatId && auth.currentUser) {
+      const sendSnippet = async () => {
+        try {
+          const messageData = {
+            type: 'code_snippet',
+            text: `Shared a ${sharedSnippet.language} snippet: ${sharedSnippet.title}`,
+            snippetData: {
+              id: sharedSnippet.id,
+              title: sharedSnippet.title,
+              language: sharedSnippet.language,
+              code: sharedSnippet.content,
+              preview: sharedSnippet.preview
+            },
+            senderId: auth.currentUser.uid,
+            senderName: auth.currentUser.displayName || 'Anonymous',
+            timestamp: new Date().toISOString(),
+          };
+
+          await addDoc(collection(db, 'chats', chatId, 'messages'), messageData);
+          
+          // Update last message
+          await updateDoc(doc(db, 'chats', chatId), {
+            lastMessage: `Shared a code snippet`,
+            lastMessageTime: new Date().toISOString(),
+          });
+        } catch (error) {
+          console.error('Error sending snippet:', error);
+          Alert.alert('Error', 'Failed to share snippet');
+        }
+      };
+      
+      sendSnippet();
+    }
+  }, [sharedSnippet]);
 
   useEffect(() => {
     if (!chatId) return;
@@ -228,7 +266,14 @@ export default function ChatScreen({ route, navigation }) {
             <TouchableOpacity
               style={styles.codeActionButton}
               onPress={() => {
-                navigation.navigate('CodeEditor', { sharedSnippet: item.snippetData });
+                navigation.navigate('CodeSnippet', { 
+                  importedSnippet: {
+                    id: item.snippetData.id,
+                    title: item.snippetData.title,
+                    language: item.snippetData.language,
+                    content: item.snippetData.code
+                  }
+                });
               }}
             >
               <Ionicons name="open-outline" size={16} color={Colors.primary} />

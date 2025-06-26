@@ -5,7 +5,7 @@ import * as MediaLibrary from 'expo-media-library';
 import * as Location from 'expo-location';
 import { addDoc, collection, doc, getDoc } from 'firebase/firestore';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Video } from 'expo-av';
+import { Video } from 'expo-video';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import {
@@ -123,27 +123,32 @@ export default function CameraScreen({ navigation }) {
     }
   }, []);
 
-  const initializeCamera = async () => {
-    try {
-      console.log('Initializing camera...');
-      setCameraError(false);
-      setCameraInitializing(true);
-      setCameraReady(false);
-      
-      // Force camera to remount by changing key
-      setCameraKey(prev => prev + 1);
-      
-      // Small delay to ensure proper initialization
-      await new Promise(resolve => setTimeout(resolve, CAMERA_INIT_DELAY));
-      
-      setShowCamera(true);
+ const initializeCamera = async () => {
+  try {
+    console.log('Initializing camera...');
+    setCameraError(false);
+    setCameraInitializing(true);
+    setCameraReady(false);
+    
+    // Force camera to remount by changing key
+    setCameraKey(prev => prev + 1);
+    
+    // Small delay to ensure proper initialization
+    await new Promise(resolve => setTimeout(resolve, CAMERA_INIT_DELAY));
+    
+    setShowCamera(true);
+    
+    // Failsafe: Clear initializing state after a timeout
+    setTimeout(() => {
       setCameraInitializing(false);
-    } catch (error) {
-      console.error('Camera initialization error:', error);
-      setCameraError(true);
-      setCameraInitializing(false);
-    }
-  };
+    }, CAMERA_INIT_DELAY + 500);
+    
+  } catch (error) {
+    console.error('Camera initialization error:', error);
+    setCameraError(true);
+    setCameraInitializing(false);
+  }
+};
 
   const loadFriends = async () => {
     if (!auth.currentUser) return;
@@ -233,167 +238,173 @@ export default function CameraScreen({ navigation }) {
     setCameraType(current => (current === 'back' ? 'front' : 'back'));
   };
 
-  const resetCamera = () => {
-    setCapturedMedia(null);
-    setMediaType(null);
-    setShowEditOptions(false);
-    setShowFriendsList(false);
-    setSelectedBorder('none');
-    setSelectedBackground('none');
-    setSelectedFriends([]);
-    setSendAsStory(false);
-    setSnapText('');
-    setShowAICaptions(false);
-    setCaptionText('');
-    // Reinitialize camera when going back
+ const resetCamera = () => {
+  setCapturedMedia(null);
+  setMediaType(null);
+  setShowEditOptions(false);
+  setShowFriendsList(false);
+  setSelectedBorder('none');
+  setSelectedBackground('none');
+  setSelectedFriends([]);
+  setSendAsStory(false);
+  setSnapText('');
+  setShowAICaptions(false);
+  setCaptionText('');
+  
+  // Don't reinitialize if camera is already ready
+  if (!cameraReady) {
     initializeCamera();
-  };
+  }
+};
 
   const saveSnap = async () => {
-    if (!capturedMedia || !auth.currentUser) return;
+  if (!capturedMedia || !auth.currentUser) return;
+  
+  if (!sendAsStory && selectedFriends.length === 0) {
+    Alert.alert('Error', 'Please select at least one friend or send as story');
+    return;
+  }
+
+  setUploading(true);
+  
+  try {
+    // Check subscription limits
+    const canSend = await SubscriptionService.canSendContent(sendAsStory ? 'story' : 'snap');
     
-    if (!sendAsStory && selectedFriends.length === 0) {
-      Alert.alert('Error', 'Please select at least one friend or send as story');
+    if (!canSend) {
+      Alert.alert(
+        'Limit Reached', 
+        'You\'ve reached your monthly limit. Upgrade to DevChat Pro for unlimited content!',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Upgrade', onPress: () => navigation.navigate('Profile') }
+        ]
+      );
+      setUploading(false);
       return;
     }
 
-    setUploading(true);
-    
-    try {
-      // Check subscription limits
-      const canSend = await SubscriptionService.canSendContent(sendAsStory ? 'story' : 'snap');
-      
-      if (!canSend) {
-        Alert.alert(
-          'Limit Reached', 
-          'You\'ve reached your monthly limit. Upgrade to DevChat Pro for unlimited content!',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Upgrade', onPress: () => navigation.navigate('Profile') }
-          ]
-        );
+    // Moderate caption if present
+    if (snapText) {
+      const moderationResult = await ContentModerationService.moderateText(snapText);
+      if (moderationResult.flagged) {
+        Alert.alert('Content Blocked', `Your caption was blocked: ${moderationResult.reason}`);
         setUploading(false);
         return;
       }
-
-      // Moderate caption if present
-      if (snapText) {
-        const moderationResult = await ContentModerationService.moderateText(snapText);
-        if (moderationResult.flagged) {
-          Alert.alert('Content Blocked', `Your caption was blocked: ${moderationResult.reason}`);
-          setUploading(false);
-          return;
-        }
-      }
-
-      // Get location if permission granted
-      let location = null;
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const currentLocation = await Location.getCurrentPositionAsync({});
-          location = {
-            latitude: currentLocation.coords.latitude,
-            longitude: currentLocation.coords.longitude
-          };
-        }
-      } catch (error) {
-        console.log('Location error:', error);
-      }
-
-      // Prepare all data first
-      const snapMetadata = {
-        border: selectedBorder,
-        background: selectedBackground,
-        mediaType: mediaType,
-        text: snapText
-      };
-
-      const timestamp = new Date().toISOString();
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-      
-      // Upload media in background while preparing database entries
-      const uploadPromise = (async () => {
-        const response = await fetch(capturedMedia);
-        const blob = await response.blob();
-        
-        const filename = `snaps/${auth.currentUser.uid}/${Date.now()}.${mediaType === 'video' ? 'mp4' : 'jpg'}`;
-        const storageRef = ref(storage, filename);
-        
-        await uploadBytes(storageRef, blob);
-        return await getDownloadURL(storageRef);
-      })();
-
-      // Prepare all database entries while upload is happening
-      const dbEntries = [];
-      
-      if (sendAsStory) {
-        dbEntries.push({
-          userId: auth.currentUser.uid,
-          username: auth.currentUser.displayName || 'Anonymous',
-          timestamp: timestamp,
-          expiresAt: expiresAt,
-          type: 'story',
-          metadata: snapMetadata,
-          location: location,
-          // Add these fields for trending
-          views: 0,
-          likes: 0,
-          shares: 0,
-          public: true // Make stories public for discovery
-        });
-      }
-
-      selectedFriends.forEach(friendId => {
-        dbEntries.push({
-          userId: auth.currentUser.uid,
-          username: auth.currentUser.displayName || 'Anonymous',
-          recipientId: friendId,
-          timestamp: timestamp,
-          expiresAt: expiresAt,
-          type: 'direct',
-          viewed: false,
-          metadata: snapMetadata,
-          location: location
-        });
-      });
-
-      // Wait for upload to complete
-      const downloadURL = await uploadPromise;
-
-      // Add imageUrl to all entries and save to database in parallel
-      const savePromises = dbEntries.map(entry => 
-        addDoc(collection(db, 'snaps'), { ...entry, imageUrl: downloadURL })
-      );
-
-      await Promise.all(savePromises);
-      
-      // Increment content count after successful upload
-      await SubscriptionService.incrementContentCount(sendAsStory ? 'story' : 'snap');
-      
-      // Track user behavior for story posts
-      if (sendAsStory) {
-        await TrendingService.trackUserBehavior('post_story', {
-          mediaType: mediaType,
-          hasCaption: !!snapText,
-          hasLocation: !!location
-        });
-      }
-      
-      // Don't wait for alert, just reset immediately
-      resetCamera();
-      
-      // Show success in background
-      setTimeout(() => {
-        Alert.alert('Success', 'Snap sent!');
-      }, 100);
-      
-    } catch (error) {
-      console.error('Upload error:', error);
-      Alert.alert('Error', 'Failed to send snap: ' + error.message);
-      setUploading(false);
     }
-  };
+
+    // Get location if permission granted
+    let location = null;
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const currentLocation = await Location.getCurrentPositionAsync({});
+        location = {
+          latitude: currentLocation.coords.latitude,
+          longitude: currentLocation.coords.longitude
+        };
+      }
+    } catch (error) {
+      console.log('Location error:', error);
+    }
+
+    // Prepare all data first
+    const snapMetadata = {
+      border: selectedBorder,
+      background: selectedBackground,
+      mediaType: mediaType,
+      text: snapText
+    };
+
+    const timestamp = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    
+    // Upload media in background while preparing database entries
+    const uploadPromise = (async () => {
+      const response = await fetch(capturedMedia);
+      const blob = await response.blob();
+      
+      const filename = `snaps/${auth.currentUser.uid}/${Date.now()}.${mediaType === 'video' ? 'mp4' : 'jpg'}`;
+      const storageRef = ref(storage, filename);
+      
+      await uploadBytes(storageRef, blob);
+      return await getDownloadURL(storageRef);
+    })();
+
+    // Prepare all database entries while upload is happening
+    const dbEntries = [];
+    
+    if (sendAsStory) {
+      dbEntries.push({
+        userId: auth.currentUser.uid,
+        username: auth.currentUser.displayName || 'Anonymous',
+        timestamp: timestamp,
+        expiresAt: expiresAt,
+        type: 'story',
+        metadata: snapMetadata,
+        location: location,
+        // Add these fields for trending
+        views: 0,
+        likes: 0,
+        shares: 0,
+        public: true // Make stories public for discovery
+      });
+    }
+
+    selectedFriends.forEach(friendId => {
+      dbEntries.push({
+        userId: auth.currentUser.uid,
+        username: auth.currentUser.displayName || 'Anonymous',
+        recipientId: friendId,
+        timestamp: timestamp,
+        expiresAt: expiresAt,
+        type: 'direct',
+        viewed: false,
+        metadata: snapMetadata,
+        location: location
+      });
+    });
+
+    // Wait for upload to complete
+    const downloadURL = await uploadPromise;
+
+    // Add imageUrl to all entries and save to database in parallel
+    const savePromises = dbEntries.map(entry => 
+      addDoc(collection(db, 'snaps'), { ...entry, imageUrl: downloadURL })
+    );
+
+    await Promise.all(savePromises);
+    
+    // Increment content count after successful upload
+    await SubscriptionService.incrementContentCount(sendAsStory ? 'story' : 'snap');
+    
+    // Track user behavior for story posts
+    if (sendAsStory) {
+      await TrendingService.trackUserBehavior('post_story', {
+        mediaType: mediaType,
+        hasCaption: !!snapText,
+        hasLocation: !!location
+      });
+    }
+    
+    // IMPORTANT: Reset uploading state before resetting camera
+    setUploading(false);
+    
+    // Don't wait for alert, just reset immediately
+    resetCamera();
+    
+    // Show success in background
+    setTimeout(() => {
+      Alert.alert('Success', 'Snap sent!');
+    }, 100);
+    
+  } catch (error) {
+    console.error('Upload error:', error);
+    Alert.alert('Error', 'Failed to send snap: ' + error.message);
+    setUploading(false);
+  }
+};
 
   const toggleFriendSelection = (friendId) => {
     setSelectedFriends(prev => {
@@ -435,38 +446,45 @@ export default function CameraScreen({ navigation }) {
   }
 
   // Edit screen
-  if (capturedMedia && showEditOptions) {
-    return (
-      <KeyboardAvoidingView 
-        style={styles.editContainer}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
-          <View style={[styles.previewContainer, getBackgroundStyle()]}>
-            <View style={[styles.mediaWrapper, getBorderStyle()]}>
-              {mediaType === 'video' ? (
-                <Video
-                  source={{ uri: capturedMedia }}
-                  style={styles.previewImage}
-                  shouldPlay
-                  isLooping
-                  resizeMode="contain"
-                  isMuted={false}
-                  volume={0.5}
-                />
-              ) : (
-                <Image source={{ uri: capturedMedia }} style={styles.previewImage} />
-              )}
-            </View>
+ // Edit screen
+if (capturedMedia && showEditOptions) {
+  return (
+    <KeyboardAvoidingView 
+      style={styles.editContainer}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
+        <View style={[styles.previewContainer, getBackgroundStyle()]}>
+          <View style={[styles.mediaWrapper, getBorderStyle()]}>
+            {mediaType === 'video' ? (
+              <Video
+                source={{ uri: capturedMedia }}
+                style={[styles.previewImage, { backgroundColor: 'transparent' }]}
+                shouldPlay
+                isLooping
+                resizeMode="contain"
+                isMuted={false}
+                volume={0.5}
+              />
+            ) : (
+              <Image 
+                source={{ uri: capturedMedia }} 
+                style={[styles.previewImage, { backgroundColor: 'transparent' }]}
+                resizeMode="contain"
+              />
+            )}
           </View>
-          
-          {/* Caption below image Instagram-style */}
-          {captionText && (
-            <View style={styles.captionContainerBelow}>
-              <Text style={styles.captionTextBelow}>{captionText}</Text>
-            </View>
-          )}
-        </ScrollView>
+        </View>
+        
+        {/* Caption below image Instagram-style */}
+        {captionText && (
+          <View style={styles.captionContainerBelow}>
+            <Text style={styles.captionTextBelow}>{captionText}</Text>
+          </View>
+        )}
+      </ScrollView>
+      
+      {/* Rest of your edit controls... */}
 
         <View style={styles.editControls}>
           <TouchableOpacity style={styles.closeButton} onPress={resetCamera}>
@@ -623,46 +641,47 @@ export default function CameraScreen({ navigation }) {
   }
 
   // Camera screen
-  return (
-    <View style={styles.container}>
-      {(cameraError || !showCamera) ? (
-        <View style={styles.errorContainer}>
-          <Ionicons name="camera-off" size={60} color="white" />
-          <Text style={styles.errorText}>
-            {cameraError ? 'Camera failed to load' : 'Camera needs initialization'}
-          </Text>
-          <TouchableOpacity 
-            style={styles.initButton}
-            onPress={initializeCamera}
-            disabled={cameraInitializing}
-          >
-            {cameraInitializing ? (
-              <ActivityIndicator size="small" color="white" />
-            ) : (
-              <>
-                <Ionicons name="refresh" size={24} color="white" />
-                <Text style={styles.initButtonText}>Initialize Camera</Text>
-              </>
-            )}
-          </TouchableOpacity>
-          
-          <View style={styles.alternativeOptions}>
-            <Text style={styles.orText}>Or use:</Text>
-            <View style={styles.alternativeButtons}>
-              <TouchableOpacity style={styles.altButton} onPress={pickImage}>
-                <Ionicons name="images" size={30} color="white" />
-                <Text style={styles.altButtonText}>Gallery</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.altButton} onPress={pickVideo}>
-                <Ionicons name="videocam" size={30} color="white" />
-                <Text style={styles.altButtonText}>Video</Text>
-              </TouchableOpacity>
-            </View>
+return (
+  <View style={styles.container}>
+    {(cameraError || !showCamera) ? (
+      <View style={styles.errorContainer}>
+        <Ionicons name="alert-circle-outline" size={60} color="white" />
+        <Text style={styles.errorText}>
+          {cameraError ? 'Camera failed to load' : 'Camera needs initialization'}
+        </Text>
+        <TouchableOpacity 
+          style={styles.initButton}
+          onPress={initializeCamera}
+          disabled={cameraInitializing}
+        >
+          {cameraInitializing ? (
+            <ActivityIndicator size="small" color="white" />
+          ) : (
+            <>
+              <Ionicons name="refresh" size={24} color="white" />
+              <Text style={styles.initButtonText}>Initialize Camera</Text>
+            </>
+          )}
+        </TouchableOpacity>
+        
+        <View style={styles.alternativeOptions}>
+          <Text style={styles.orText}>Or use:</Text>
+          <View style={styles.alternativeButtons}>
+            <TouchableOpacity style={styles.altButton} onPress={pickImage}>
+              <Ionicons name="images" size={30} color="white" />
+              <Text style={styles.altButtonText}>Gallery</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.altButton} onPress={pickVideo}>
+              <Ionicons name="videocam" size={30} color="white" />
+              <Text style={styles.altButtonText}>Video</Text>
+            </TouchableOpacity>
           </View>
         </View>
-      ) : (
-        <>
-          {showCamera && (
+      </View>
+    ) : (
+      <>
+        {showCamera && (
+          <View style={styles.cameraWrapper}>
             <CameraView 
               key={cameraKey}
               style={styles.camera} 
@@ -678,54 +697,55 @@ export default function CameraScreen({ navigation }) {
                 setCameraError(true);
                 setCameraInitializing(false);
               }}
-            >
-              <View style={styles.cameraControls}>
-                <TouchableOpacity style={styles.flipButton} onPress={flipCamera}>
-                  <Ionicons name="camera-reverse" size={30} color="white" />
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.refreshButton} 
-                  onPress={initializeCamera}
-                  disabled={cameraInitializing}
-                >
-                  <Ionicons name="refresh" size={24} color="white" />
-                </TouchableOpacity>
-              </View>
-            </CameraView>
-          )}
-
-          {cameraInitializing && (
-            <View style={styles.loadingOverlay}>
-              <ActivityIndicator size="large" color="white" />
-              <Text style={styles.loadingText}>Initializing camera...</Text>
+            />
+            
+            <View style={styles.cameraControls}>
+              <TouchableOpacity style={styles.flipButton} onPress={flipCamera}>
+                <Ionicons name="camera-reverse" size={30} color="white" />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.refreshButton} 
+                onPress={initializeCamera}
+                disabled={cameraInitializing}
+              >
+                <Ionicons name="refresh" size={24} color="white" />
+              </TouchableOpacity>
             </View>
-          )}
-
-          <View style={styles.bottomControls}>
-            <TouchableOpacity style={styles.galleryButton} onPress={pickImage}>
-              <Ionicons name="images" size={30} color="white" />
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[styles.captureButton, !cameraReady && styles.captureButtonDisabled]}
-              onPress={takePicture}
-              disabled={!cameraReady}
-            >
-              <View style={styles.captureInner} />
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.galleryButton} onPress={pickVideo}>
-              <Ionicons name="videocam" size={30} color="white" />
-            </TouchableOpacity>
           </View>
+        )}
 
-          <Text style={styles.hint}>
-            {cameraReady ? 'Tap center for photo • Use icons for gallery/video' : 'Waiting for camera...'}
-          </Text>
-        </>
-      )}
-    </View>
-  );
+        {cameraInitializing && (
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator size="large" color="white" />
+            <Text style={styles.loadingText}>Initializing camera...</Text>
+          </View>
+        )}
+
+        <View style={styles.bottomControls}>
+          <TouchableOpacity style={styles.galleryButton} onPress={pickImage}>
+            <Ionicons name="images" size={30} color="white" />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.captureButton, !cameraReady && styles.captureButtonDisabled]}
+            onPress={takePicture}
+            disabled={!cameraReady}
+          >
+            <View style={styles.captureInner} />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.galleryButton} onPress={pickVideo}>
+            <Ionicons name="videocam" size={30} color="white" />
+          </TouchableOpacity>
+        </View>
+
+        <Text style={styles.hint}>
+          {cameraReady ? 'Tap center for photo • Use icons for gallery/video' : 'Waiting for camera...'}
+        </Text>
+      </>
+    )}
+  </View>
+);
 }
 
 const styles = StyleSheet.create({
@@ -735,16 +755,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  camera: {
-    flex: 1,
-    width: '100%',
-  },
-  cameraControls: {
-    position: 'absolute',
-    top: 50,
-    right: 20,
-    alignItems: 'flex-end',
-  },
+ cameraWrapper: {
+  flex: 1,
+  width: '100%',
+  position: 'relative',
+},
+camera: {
+  position: 'absolute',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+},
+cameraControls: {
+  position: 'absolute',
+  top: 50,
+  right: 20,
+  alignItems: 'flex-end',
+  zIndex: 10,
+},
   flipButton: {
     backgroundColor: 'rgba(0,0,0,0.5)',
     borderRadius: 25,
@@ -882,24 +911,28 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'black',
   },
-  previewContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingBottom: 20,
-    paddingTop: 80,
-  },
-  mediaWrapper: {
-    width: '85%',
-    height: '70%',
-    maxWidth: 350,
-    maxHeight: 500,
-  },
-  previewImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'contain',
-  },
+previewContainer: {
+  flex: 1,
+  justifyContent: 'center',
+  alignItems: 'center',
+  paddingBottom: 20,
+  paddingTop: 80,
+  minHeight: screenHeight * 0.8, // Add minimum height
+},
+mediaWrapper: {
+  width: '85%',
+  height: '70%',
+  maxWidth: 350,
+  maxHeight: 500,
+  justifyContent: 'center', // Center the image
+  alignItems: 'center', // Center the image
+},
+previewImage: {
+  width: '100%',
+  height: '100%',
+  resizeMode: 'contain',
+  backgroundColor: 'transparent', // Make sure image background is transparent
+},
   editControls: {
     position: 'absolute',
     top: 50,
@@ -1091,6 +1124,7 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     flex: 1,
   },
+
   noFriendsText: {
     textAlign: 'center',
     padding: 50,

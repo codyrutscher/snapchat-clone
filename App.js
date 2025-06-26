@@ -8,6 +8,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Colors } from './constants/Colors';
 import { auth } from './firebase';
+import CodeEditorScreen from './screens/CodeEditorScreen';
 import CreateGroupScreen from './screens/CreateGroupScreen';
 import PreferencesScreen from './screens/PreferencesScreen';
 
@@ -110,6 +111,17 @@ function MainTabs() {
         options={{
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="camera-outline" size={size} color={color} />
+          ),
+          headerShown: false,
+        }}
+      />
+
+         <Tab.Screen 
+        name="Code" 
+        component={CodeEditorScreen}
+        options={{
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="code-slash-outline" size={size} color={color} />
           ),
           headerShown: false,
         }}
@@ -314,6 +326,14 @@ function App() {
       backgroundColor: Colors.primary,
     },
     headerTintColor: Colors.white,
+  }}
+/>
+
+<Stack.Screen 
+  name="CodeEditor" 
+  component={CodeEditorScreen}
+  options={{ 
+    headerShown: false,
   }}
 />
           </>

@@ -141,7 +141,8 @@ class SubscriptionService {
     
     return {
       snaps: Math.max(0, this.monthlyLimit - this.snapCount),
-      stories: Math.max(0, this.monthlyLimit - this.storyCount)
+      stories: Math.max(0, this.monthlyLimit - this.storyCount),
+      codeSnippets: 20 // Add this for code snippets
     };
   }
 

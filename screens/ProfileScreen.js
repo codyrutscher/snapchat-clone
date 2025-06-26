@@ -245,11 +245,12 @@ export default function ProfileScreen({ navigation }) {
           )}
         </TouchableOpacity>
 
-        {!subscriptionStatus?.isSubscribed && (
+         {!subscriptionStatus?.isSubscribed && (
           <View style={styles.limitInfo}>
             <Text style={styles.limitText}>
               Free tier: {subscriptionStatus?.remaining?.snaps || 20} snaps, 
-              {subscriptionStatus?.remaining?.stories || 20} stories left this month
+              {subscriptionStatus?.remaining?.stories || 20} stories,
+              20 code snippets left this month
             </Text>
           </View>
         )}
@@ -413,15 +414,19 @@ export default function ProfileScreen({ navigation }) {
               </TouchableOpacity>
             </View>
             
-            <View style={styles.proFeatures}>
+              <View style={styles.proFeatures}>
               <Text style={styles.featuresTitle}>Pro Features:</Text>
               <View style={styles.featureItem}>
                 <Ionicons name="infinite" size={20} color={Colors.primary} />
                 <Text style={styles.featureText}>Unlimited snaps & stories</Text>
               </View>
               <View style={styles.featureItem}>
-                <Ionicons name="code-working" size={20} color={Colors.primary} />
-                <Text style={styles.featureText}>Advanced AI code analysis</Text>
+                <Ionicons name="code-slash" size={20} color={Colors.primary} />
+                <Text style={styles.featureText}>Unlimited code snippets (Free: 20/mo)</Text>
+              </View>
+              <View style={styles.featureItem}>
+                <Ionicons name="sparkles" size={20} color={Colors.primary} />
+                <Text style={styles.featureText}>Advanced AI code generation</Text>
               </View>
               <View style={styles.featureItem}>
                 <Ionicons name="git-network" size={20} color={Colors.primary} />

@@ -191,6 +191,69 @@ export default function ChatScreen({ route, navigation }) {
       );
     }
     
+    // Handle code snippet messages
+    if (item.type === 'code_snippet' && item.snippetData) {
+      const handleCopyCode = () => {
+        // For React Native
+        if (Platform.OS !== 'web') {
+          const Clipboard = require('@react-native-clipboard/clipboard').default;
+          Clipboard.setString(item.snippetData.code);
+          Alert.alert('Copied!', 'Code copied to clipboard');
+        } else {
+          // For web
+          navigator.clipboard.writeText(item.snippetData.code).then(() => {
+            Alert.alert('Copied!', 'Code copied to clipboard');
+          }).catch(err => {
+            console.error('Failed to copy:', err);
+          });
+        }
+      };
+
+      return (
+        <View
+          style={[styles.codeMessageContainer, isMyMessage && styles.myCodeMessageContainer]}
+        >
+          <View style={styles.codeHeader}>
+            <Ionicons name="code-slash" size={20} color={Colors.primary} />
+            <Text style={styles.codeTitle}>{item.snippetData.title || 'Code Snippet'}</Text>
+          </View>
+          <Text style={styles.codeLanguage}>{item.snippetData.language}</Text>
+          <View style={styles.codePreview}>
+            <Text style={styles.codePreviewText} numberOfLines={3}>
+              {item.snippetData.code}
+            </Text>
+          </View>
+          
+          <View style={styles.codeActions}>
+            <TouchableOpacity
+              style={styles.codeActionButton}
+              onPress={() => {
+                navigation.navigate('CodeEditor', { sharedSnippet: item.snippetData });
+              }}
+            >
+              <Ionicons name="open-outline" size={16} color={Colors.primary} />
+              <Text style={styles.codeActionText}>Open in Editor</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.codeActionButton}
+              onPress={handleCopyCode}
+            >
+              <Ionicons name="copy-outline" size={16} color={Colors.primary} />
+              <Text style={styles.codeActionText}>Copy Code</Text>
+            </TouchableOpacity>
+          </View>
+          
+          <Text style={[styles.messageTime, isMyMessage && styles.myMessageTime]}>
+            {new Date(item.timestamp).toLocaleTimeString([], { 
+              hour: '2-digit', 
+              minute: '2-digit' 
+            })}
+          </Text>
+        </View>
+      );
+    }
+    
     return (
       <View style={[styles.messageContainer, isMyMessage && styles.myMessageContainer]}>
         {chatType === 'group' && !isMyMessage && (
@@ -231,6 +294,10 @@ export default function ChatScreen({ route, navigation }) {
         inverted
         contentContainerStyle={styles.messagesList}
       />
+      
+      {/* Code Editor Button */}
+     
+      
       <View style={styles.inputContainer}>
         <TextInput
           style={styles.input}
@@ -570,4 +637,74 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: 'bold',
   },
+  codeMessageContainer: {
+    padding: 12,
+    marginVertical: 5,
+    marginHorizontal: 10,
+    backgroundColor: Colors.surface,
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+    maxWidth: '80%',
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  myCodeMessageContainer: {
+    alignSelf: 'flex-end',
+    backgroundColor: Colors.primary + '20',
+  },
+  codeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  codeTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: Colors.text,
+    marginLeft: 8,
+  },
+  codeLanguage: {
+    fontSize: 12,
+    color: Colors.primary,
+    marginBottom: 8,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  codePreview: {
+    backgroundColor: Colors.background,
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  codePreviewText: {
+    fontSize: 12,
+    color: Colors.text,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  tapToView: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
+  },
+  codeActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: Colors.lightGray,
+  },
+  codeActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    borderRadius: 15,
+    backgroundColor: Colors.primary + '10',
+  },
+  codeActionText: {
+    marginLeft: 5,
+    fontSize: 12,
+    color: Colors.primary,
+    fontWeight: '600',
+  },
+ 
 });

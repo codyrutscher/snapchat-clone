@@ -10,7 +10,7 @@ import {
   Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import OpenAIService from '../services/OpenAIServiceSimple';
+import OpenAIService from '../services/OpenAIService';
 import { Colors } from '../constants/Colors';
 
 export function CaptionSuggestions({ imageContext, onSelect }) {
@@ -199,7 +199,10 @@ export function StoryIdeasWidget({ onSelectIdea }) {
               </ScrollView>
             )}
 
-            <TouchableOpacity style={styles.refreshIdeasButton} onPress={loadIdeas}>
+            <TouchableOpacity style={styles.refreshIdeasButton} onPress={() => {
+              setIdeas([]); // Clear existing ideas to force regeneration
+              loadIdeas();
+            }}>
               <Text style={styles.refreshText}>Get New Ideas</Text>
             </TouchableOpacity>
           </View>

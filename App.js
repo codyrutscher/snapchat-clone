@@ -299,7 +299,11 @@ function App() {
   name="CreateGroup" 
   component={CreateGroupScreen} 
   options={{ 
-    headerShown: false,
+    title: 'Create Group',
+    headerStyle: {
+      backgroundColor: Colors.primary,
+    },
+    headerTintColor: Colors.white,
   }}
 />
 
@@ -329,13 +333,6 @@ function App() {
   }}
 />
 
-<Stack.Screen 
-  name="CodeSnippet" 
-  component={CodeSnippetScreen}
-  options={{ 
-    headerShown: false,
-  }}
-/>
           </>
         )}
       </Stack.Navigator>

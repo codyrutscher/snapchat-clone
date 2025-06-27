@@ -14,6 +14,8 @@ export default function StoriesScreen() {
   const [stories, setStories] = useState([]);
   const [viewingStory, setViewingStory] = useState(null);
   const [viewTimer, setViewTimer] = useState(null);
+  const [page, setPage] = useState(0);
+  const STORIES_PER_PAGE = 20;
 
   useEffect(() => {
     // Simpler query - just get story type
@@ -62,11 +64,17 @@ export default function StoriesScreen() {
   };
 
   const viewStory = (story) => {
+    // Clear any existing timer first
+    if (viewTimer) {
+      clearTimeout(viewTimer);
+    }
+    
     setViewingStory(story);
     
     // Auto-close after 10 seconds
     const timer = setTimeout(() => {
       setViewingStory(null);
+      setViewTimer(null); // Clear timer reference
     }, 10000);
     
     setViewTimer(timer);
@@ -75,6 +83,7 @@ export default function StoriesScreen() {
   const closeStory = () => {
     if (viewTimer) {
       clearTimeout(viewTimer);
+      setViewTimer(null); // Clear timer reference
     }
     setViewingStory(null);
   };
@@ -134,11 +143,17 @@ const renderStory = ({ item }) => (
 />
           </View>
           <FlatList
-            data={stories}
+            data={stories.slice(0, (page + 1) * STORIES_PER_PAGE)}
             renderItem={renderStory}
             keyExtractor={(item) => item.id}
             numColumns={2}
             contentContainerStyle={styles.listContainer}
+            onEndReached={() => {
+              if ((page + 1) * STORIES_PER_PAGE < stories.length) {
+                setPage(page + 1);
+              }
+            }}
+            onEndReachedThreshold={0.5}
           />
         </>
       )}

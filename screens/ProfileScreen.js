@@ -20,7 +20,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { FriendshipInsights } from '../components/AIAssistant';
 import PayPalSubscription from '../components/PayPalSubscription';
 import SubscriptionService from '../services/SubscriptionService';
-import OpenAIService from '../services/OpenAIServiceSimple';
+import OpenAIService from '../services/OpenAIService';
 import { Colors } from '../constants/Colors';
 import { auth, db } from '../firebase';
 import { uploadToCloudinary } from '../services/cloudinaryConfig';

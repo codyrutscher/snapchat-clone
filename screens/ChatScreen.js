@@ -144,6 +144,7 @@ export default function ChatScreen({ route, navigation }) {
         setInputText('');
       } catch (error) {
         console.error('Error sending message:', error);
+        Alert.alert('Error', 'Failed to send message. Please try again.');
       }
     }
   };

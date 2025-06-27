@@ -18,6 +18,7 @@ import {
     Platform,
     ScrollView,
     StyleSheet,
+    SafeAreaView,
     Text,
     TextInput,
     TouchableOpacity,
@@ -117,9 +118,19 @@ export default function CameraScreen({ navigation }) {
     // Load friends
     loadFriends();
     
+    // Request permissions
+    if (!permission) {
+      requestPermission().catch(error => {
+        console.error('Failed to request camera permission:', error);
+        Alert.alert('Permission Error', 'Unable to request camera permission. Please enable it in settings.');
+      });
+    }
+    
     // Request media library permissions for non-web platforms
     if (Platform.OS !== 'web') {
-      MediaLibrary.requestPermissionsAsync();
+      MediaLibrary.requestPermissionsAsync().catch(error => {
+        console.error('Failed to request media library permission:', error);
+      });
     }
   }, []);
 
@@ -642,7 +653,7 @@ if (capturedMedia && showEditOptions) {
 
   // Camera screen
 return (
-  <View style={styles.container}>
+  <SafeAreaView style={styles.container}>
     {(cameraError || !showCamera) ? (
       <View style={styles.errorContainer}>
         <Ionicons name="alert-circle-outline" size={60} color="white" />
@@ -744,7 +755,7 @@ return (
         </Text>
       </>
     )}
-  </View>
+  </SafeAreaView>
 );
 }
 

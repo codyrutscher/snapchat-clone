@@ -29,12 +29,15 @@ export default function SnapsScreen() {
   useEffect(() => {
     if (!auth.currentUser) return;
 
-    loadSnaps();
+    const unsubscribeFromListeners = loadSnaps();
     
-    // Cleanup timer on unmount
+    // Cleanup timer and listeners on unmount
     return () => {
       if (viewTimer) {
         clearTimeout(viewTimer);
+      }
+      if (unsubscribeFromListeners) {
+        unsubscribeFromListeners();
       }
     };
   }, []);
@@ -92,6 +95,7 @@ export default function SnapsScreen() {
       setViewedSnaps(snaps);
     });
 
+    // Return cleanup function
     return () => {
       unviewedUnsubscribe();
       viewedUnsubscribe();
@@ -106,6 +110,12 @@ export default function SnapsScreen() {
 
   const viewSnap = async (snap) => {
     console.log('Viewing snap:', snap.id);
+    
+    // Clear any existing timer first
+    if (viewTimer) {
+      clearTimeout(viewTimer);
+    }
+    
     setViewingSnap(snap);
     setCurrentSnapForReply(snap);
     setShowSmartReplies(true);
@@ -125,6 +135,7 @@ export default function SnapsScreen() {
     const timer = setTimeout(() => {
       setViewingSnap(null);
       setShowSmartReplies(false);
+      setViewTimer(null); // Clear timer reference
       // Delete the snap after viewing
       deleteSnap(snap.id);
     }, 15000);
@@ -135,6 +146,7 @@ export default function SnapsScreen() {
   const closeSnap = () => {
     if (viewTimer) {
       clearTimeout(viewTimer);
+      setViewTimer(null); // Clear timer reference
     }
     setViewingSnap(null);
     setShowSmartReplies(false);
